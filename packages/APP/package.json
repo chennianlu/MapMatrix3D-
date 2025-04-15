@@ -1,0 +1,25 @@
+{
+  "name": "@enerv-3d/app",
+  "version": "0.0.1",
+  "author": "cnl",
+  "aliasName": "enerv3d-app",
+  "description": "enerv3d app",
+  "main": "./dist/enerv-app.umd.js",
+  "module": "./dist/enerv-app.es.js",
+  "module:dev": "./index.ts",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://nexus.encloudx.com/repository/local-npm/"
+  },
+  "scripts": {
+    "build": "vite build && npm run build:types && npm run build:clean",
+    "build:types": "tsc --emitDeclarationOnly -p tsconfig.json",
+    "build:clean": "mv dist/packages/APP/* dist && rm -rf dist/src & rm -rf dist/packages",
+    "docs": "npm run docs:typedoc ../../docs/APP index.ts",
+    "docs:typedoc": "npx typedoc --plugin typedoc-plugin-markdown --plugin ../../script/typedoc-plugin-not-exported.cjs --tsconfig tsconfig.json --gitRevision main --hideBreadcrumbs true --allReflectionsHaveOwnDocument true --readme none --excludeInternal --excludePrivate --excludeProtected --sort source-order --out"
+  },
+  "dependencies": {}
+}

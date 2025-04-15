@@ -1,0 +1,40 @@
+
+#app {
+    .logo-vertical{
+        height: 32px;
+        margin: 16px;
+        background: rgba(255,255,255,.2);
+        border-radius: 6px;
+    
+        .sidebar-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+    }
+
+    .app-site-layout {
+        position: relative;
+        .app-header {
+            width: 100%;
+            height: 50px;
+            position: absolute;
+            top: 0;
+            backdrop-filter: blur(5px);
+            background-color: rgba(255,255,255,.2);
+            z-index: 100;
+        }
+    
+        .app-container {
+            width: 100%;
+            height:100vh;
+            background: gray;
+        }
+    }
+
+
+
+
+}
+

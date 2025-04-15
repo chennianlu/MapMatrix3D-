@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+      "target": "ESNext",
+      "useDefineForClassFields": true,
+      "module": "ESNext",
+      "lib": ["ESNext", "DOM"],
+      "moduleResolution": "node",
+      "sourceMap": false,
+      "resolveJsonModule": true,
+      "esModuleInterop": true,
+      "types": ["vite/client"],
+      // for build
+      // "noEmit": true,
+      "declaration": true,
+      "declarationDir": "dist",
+      "outDir": "dist",
+      "skipLibCheck": true,
+      "noImplicitAny": false,
+      "noUnusedLocals": false,
+      "noUnusedParameters":false,
+      "noImplicitReturns": false,
+      "strictPropertyInitialization": false,
+      "strictNullChecks": false,
+      "strict": false,
+      "typeRoots": ["./types/"],
+      "paths": {
+          "@enerv-3d/core": ["../../src"],
+          "@enerv-3d/*": ["../*"]
+      }
+  }
+}
