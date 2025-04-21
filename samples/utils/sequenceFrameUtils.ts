@@ -1,3 +1,15 @@
+/**
+ * @file 序列帧动画工具
+ * @description 提供创建和控制序列帧动画的功能。
+ * 该工具用于生成具有序列帧动画能力的网格对象，能够实现
+ * 精灵动画效果，适用于粒子特效、UI动画和游戏角色等场景。
+ * 
+ * 主要功能：
+ * - 创建序列帧动画网格(createSequenceFrame)
+ * - 控制动画播放速度和循环
+ * - 管理UV坐标自动更新
+ * - 提供动画更新方法和扩展属性
+ */
 import * as THREE from 'three';
 import { deepMerge } from './index.ts';
 

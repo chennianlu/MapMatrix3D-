@@ -10,6 +10,7 @@ interface BaseLineMaterialOptions {
     opacity?: number;
     transparent?: boolean;
     depthTest?: boolean;
+    depthWrite?: boolean;
 }
 
 // 光斑材质选项接口
@@ -20,6 +21,7 @@ interface GlowSpotMaterialOptions {
     opacity?: number;
     transparent?: boolean;
     depthTest?: boolean;
+    depthWrite?: boolean;
 }
 
 // 自定义的ShaderMaterial，添加updateTime方法
@@ -42,6 +44,7 @@ interface CountryLineMaterialOptions {
     glowSpeed?: number;
     speedFactors?: number[];
     depthTest?: boolean;
+    depthWrite?: boolean;
 }
 
 // 国家线条类型
@@ -160,10 +163,11 @@ const useCountryLine = () => {
      */
     const createBaseLineMaterial = (options: BaseLineMaterialOptions = {}): THREE.ShaderMaterial => {
         const defaultOptions = {
-            color: new THREE.Color(0xb0b8c0), // 亮灰色
-            opacity: 0.6, // 提高不透明度
+            color: new THREE.Color(0xb0b8c0),
+            opacity: 0.6,
             transparent: true,
-            depthTest: false,
+            depthTest: true,
+            depthWrite: true,  // 启用深度写入
         };
 
         const finalOptions = { ...defaultOptions, ...options };
@@ -172,7 +176,8 @@ const useCountryLine = () => {
             vertexShader: baseLineVertexShader,
             fragmentShader: baseLineFragmentShader,
             transparent: true,
-            depthTest: finalOptions.depthTest !== undefined ? finalOptions.depthTest : false,
+            depthTest: finalOptions.depthTest,
+            depthWrite: finalOptions.depthWrite,
             uniforms: {
                 color: {
                     value:
@@ -192,12 +197,13 @@ const useCountryLine = () => {
      */
     const createGlowSpotMaterial = (options: GlowSpotMaterialOptions = {}): GlowingMaterial => {
         const defaultOptions = {
-            color: new THREE.Color(0x0080ff), // 更深蓝色
-            speed: 5.0, // 降低默认速度
+            color: new THREE.Color(0x0080ff),
+            speed: 5.0,
             totalLength: 100.0,
-            opacity: 0.9, // 默认透明度
+            opacity: 0.9,
             transparent: true,
-            depthTest: false,
+            depthTest: true,
+            depthWrite: true,  // 启用深度写入
         };
 
         const finalOptions = { ...defaultOptions, ...options };
@@ -206,8 +212,9 @@ const useCountryLine = () => {
             vertexShader: glowingSpotVertexShader,
             fragmentShader: glowingSpotFragmentShader,
             transparent: true,
-            depthTest: finalOptions.depthTest !== undefined ? finalOptions.depthTest : false,
-            blending: THREE.AdditiveBlending, // 加法混合，让光点更亮
+            depthTest: finalOptions.depthTest,
+            depthWrite: finalOptions.depthWrite,
+            blending: THREE.AdditiveBlending,
             uniforms: {
                 color: {
                     value:
@@ -222,7 +229,6 @@ const useCountryLine = () => {
             },
         }) as GlowingMaterial;
 
-        // 添加更新方法
         material.updateTime = (time: number): void => {
             material.uniforms.time.value = time;
         };
@@ -235,86 +241,81 @@ const useCountryLine = () => {
      * @param data 地图数据
      * @param materialOptions 材质参数配置
      * @param lineType 线条类型：'LineLoop', 'Line', 'LineSegments'或'Line2'
+     * @param renderOrder 渲染顺序
      * @returns 线条组
      */
     const createCountryFlatLine = (
         data: GeoJSON,
         materialOptions: CountryLineMaterialOptions = {},
-        lineType: LineType = 'LineLoop'
+        lineType: LineType = 'LineLoop',
+        renderOrder: number = 0
     ): AnimatedLineGroup => {
-        // 使用标准材质(Line2需要特殊处理)
         if (lineType === 'Line2') {
-            // Line2需要特殊处理，将新参数转换为Line2兼容的参数
             const lineOptions = {
                 color: materialOptions.lineColor || 0xb0b8c0,
                 linewidth: materialOptions.linewidth || 0.001,
                 opacity: materialOptions.lineOpacity || 0.6,
                 transparent: true,
-                depthTest: materialOptions.depthTest !== undefined ? materialOptions.depthTest : false,
+                depthTest: false,
+                depthWrite: false,
             };
 
             const material = new LineMaterial(lineOptions);
 
             let features = data.features;
             let lineGroup = new THREE.Group() as AnimatedLineGroup;
+            lineGroup.renderOrder = renderOrder;
 
             for (let i = 0; i < features.length; i++) {
                 const element = features[i];
                 element.geometry.coordinates.forEach((coords, idx) => {
-                    // 每一块的点数据
                     const points: number[] = [];
 
                     coords[0].forEach(item => {
-                        points.push(item[0], item[1], 0);
+                        points.push(item[0], item[1], 0.1);
                     });
 
-                    // 根据每一块的点数据创建线条
                     const geometry = new LineGeometry();
                     geometry.setPositions(points);
                     const line = new Line2(geometry, material);
                     line.computeLineDistances();
                     line.name = 'countryLine2';
+                    line.renderOrder = renderOrder;
 
-                    // 将线条插入到组中
                     lineGroup.add(line);
                 });
             }
 
-            // 添加空的更新动画方法以符合接口
             lineGroup.updateAnimation = (time: number): void => {
                 // Line2模式下没有流光动画
             };
 
             return lineGroup;
         } else {
-            // 创建组合
             let features = data.features;
             let lineGroup = new THREE.Group() as AnimatedLineGroup;
+            lineGroup.renderOrder = renderOrder;
 
-            // 创建两组线条：基础线和光斑线
             const baseLines = new THREE.Group();
             const glowingSpots = new THREE.Group();
+            baseLines.renderOrder = renderOrder;
+            glowingSpots.renderOrder = renderOrder;
 
-            // 获取参数 - 不再兼容旧参数
-            const lineColor = materialOptions.lineColor || 0xb0b8c0; // 基础线条颜色
-            const lineOpacity = materialOptions.lineOpacity || 0.6; // 基础线条不透明度
-            const glowColor = materialOptions.glowColor || 0x0080ff; // 流动光斑颜色
-            const glowOpacity =
-                materialOptions.glowOpacity !== undefined ? materialOptions.glowOpacity : 0.9; // 流动光斑不透明度
-            const glowSpeed = materialOptions.glowSpeed !== undefined ? materialOptions.glowSpeed : 2.5; // 流动光斑基础速度
-            const speedFactors = materialOptions.speedFactors || [1.2, 0.6, -0.8]; // 流动光斑速度因子
+            const lineColor = materialOptions.lineColor || 0xb0b8c0;
+            const lineOpacity = materialOptions.lineOpacity || 0.6;
+            const glowColor = materialOptions.glowColor || 0x0080ff;
+            const glowOpacity = materialOptions.glowOpacity !== undefined ? materialOptions.glowOpacity : 0.9;
+            const glowSpeed = materialOptions.glowSpeed !== undefined ? materialOptions.glowSpeed : 2.5;
+            const speedFactors = materialOptions.speedFactors || [1.2, 0.6, -0.8];
 
-            // 创建基础线材质 - 使用自定义参数
             const baseLineMaterial = createBaseLineMaterial({
                 color: lineColor,
                 opacity: lineOpacity,
-                depthTest: materialOptions.depthTest,
+                depthTest: false,
+                depthWrite: false,
             });
 
-            // 记录所有创建的流光材质(用于动画更新)
             const glowingMaterials: GlowingMaterial[] = [];
-
-            // 记录总长度，用于计算平均速度
             let totalPathLength = 0;
             let pathCount = 0;
 
@@ -357,7 +358,7 @@ const useCountryLine = () => {
                     const points: THREE.Vector3[] = [];
 
                     coords[0].forEach(item => {
-                        points.push(new THREE.Vector3(item[0], item[1], 0));
+                        points.push(new THREE.Vector3(item[0], item[1], 0.1));  // 稍微提高z轴位置
                     });
 
                     if (points.length > 1) {
@@ -401,7 +402,6 @@ const useCountryLine = () => {
                             const speed = baseSpeed * speedFactor;
 
                             // 对每个流光点使用单独的材质和速度
-                            // 使用用户定义的速度因子
                             speedFactors.forEach((factor, spotIndex) => {
                                 const spotSpeed = speed * factor;
                                 const spotMaterial = createGlowSpotMaterial({
@@ -409,7 +409,8 @@ const useCountryLine = () => {
                                     speed: spotSpeed,
                                     totalLength: pathLength,
                                     opacity: glowOpacity,
-                                    depthTest: materialOptions.depthTest,
+                                    depthTest: false,
+                                    depthWrite: false,
                                 });
 
                                 glowingMaterials.push(spotMaterial);
@@ -446,11 +447,9 @@ const useCountryLine = () => {
                 });
             }
 
-            // 添加基础线和流光点到组
             lineGroup.add(baseLines);
             lineGroup.add(glowingSpots);
 
-            // 添加更新方法
             lineGroup.updateAnimation = (time: number): void => {
                 glowingMaterials.forEach(material => {
                     if (material && material.updateTime) {

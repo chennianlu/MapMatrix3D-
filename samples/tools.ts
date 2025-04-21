@@ -1,21 +1,25 @@
+/**
+ * @file 场景工具与初始化入口
+ * @description 提供场景初始化、3D效果管理与更新控制的功能。
+ * 该文件是3D场景的入口点，负责初始化场景、加载地图数据、
+ * 管理各种视觉效果(流光线、光柱、粒子)并实现动画循环。
+ */
 import * as THREE from "three"
 import { ProvinceData } from './types';
 import TWEEN from '@tweenjs/tween.js';
 import { Group3D, BaseObject3D } from '../src/index';
 import useConversionStandardData from "./hooks/useConversionStandardData"
-// 使用TypeScript版本的useCountry
 import useCountry from "./hooks/useCountry.ts"
 import useMapMarkedLightPillar from "./hooks/map/useMapMarkedLightPillar.ts"
 import useSequenceFrameAnimate from "./hooks/useSequenceFrameAnimate"
 import { Widget3D } from '../src/objects/Widget3D';
 import { WIDGET } from '../src/constants';
-
 import type { EnerV3DCore } from '../src/APP';
 
-// 随机数生成函数
-const random = (min: number, max: number): number => {
-  return Math.random() * (max - min) + min;
-};
+import { createGlowingShape } from './utils/glowingShape';
+import { initParticles, updateParticles, SequenceFrameMesh } from './utils/particleEffects';
+import { updateLightPillars as updateLightPillarEffects } from './utils/lightPillarEffects';
+import { transformGeoJSON } from './utils/geoDataUtils';
 
 // 全局时钟
 const clock = new THREE.Clock();
@@ -26,19 +30,14 @@ let particleArr: SequenceFrameMesh[] = [];
 // 光柱数组
 let lightPillars: THREE.Group[] = [];
 
-// 添加新的动画更新函数
 /**
  * 更新流光动画效果
  * 需要在渲染循环中调用此函数
  */
 export const updateFlowingLines = () => {
-  // 获取当前时间
   const time = clock.getElapsedTime();
-
-  // 遍历所有流光线并更新
   flowingLines.forEach(line => {
     if (line && line.updateAnimation) {
-      // 传递当前时间给updateAnimation方法
       line.updateAnimation(time);
     }
   });
@@ -46,7 +45,7 @@ export const updateFlowingLines = () => {
 
 /**
  * 添加要更新的流光线
- * @param {Object} line 带有updateAnimation方法的线条对象
+ * @param line 带有updateAnimation方法的线条对象
  */
 export const addFlowingLine = (line: any) => {
   if (line) {
@@ -56,36 +55,31 @@ export const addFlowingLine = (line: any) => {
 
 /**
  * 添加光柱到管理数组
- * @param {THREE.Group} lightPillar 光柱对象
+ * @param lightPillar 光柱对象
  */
 export const addLightPillar = (lightPillar: THREE.Group) => {
   if (lightPillar) {
     lightPillars.push(lightPillar);
-    // 为光柱添加扩散动画属性
     initLightPillarDiffusion(lightPillar);
   }
 };
 
 /**
  * 初始化光柱扩散效果
- * @param {THREE.Group} lightPillar 光柱对象
+ * @param lightPillar 光柱对象
  */
 const initLightPillarDiffusion = (lightPillar: THREE.Group) => {
-  // 查找光柱组中的光圈对象
   const lightHalo = lightPillar.children.find(child => child.name === 'createLightHalo');
-
   if (!lightHalo) return;
 
-  // 初始化光圈的基本属性
   const initialScale = lightHalo.scale.x;
   const maxScale = initialScale * 2.5;
 
-  // 添加扩散动画属性
   lightHalo.userData = {
     initialScale: initialScale,
     maxScale: maxScale,
     currentScale: initialScale,
-    speed: 0.001 // 随机速度使得各个光圈的扩散效果不同步
+    speed: 0.001
   };
 };
 
@@ -93,44 +87,30 @@ const initLightPillarDiffusion = (lightPillar: THREE.Group) => {
  * 更新光柱扩散效果
  */
 export const updateLightPillars = () => {
+  // 对于每个内部需要自定义更新的光柱进行处理
   lightPillars.forEach(lightPillar => {
-    // 查找光柱组中的光圈对象
     const lightHalo = lightPillar.children.find(child => child.name === 'createLightHalo');
-
     if (!lightHalo || !lightHalo.userData) return;
 
     const { initialScale, maxScale, speed } = lightHalo.userData;
-
-    // 光圈持续扩大
     lightHalo.userData.currentScale += speed;
 
-    // 达到最大值时，立即重置为初始大小
     if (lightHalo.userData.currentScale >= maxScale) {
       lightHalo.userData.currentScale = initialScale;
     }
 
-    // 应用缩放和透明度
     const scale = lightHalo.userData.currentScale;
-
-    // 计算透明度 - 随着scale增大而减小，达到maxScale时为0
     const scaleRange = maxScale - initialScale;
     const scaleProgress = (scale - initialScale) / scaleRange;
-    const opacity = 1 - scaleProgress; // 线性减小透明度
+    const opacity = 1 - scaleProgress;
 
     lightHalo.scale.set(scale, scale, scale);
     ((lightHalo as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = opacity;
   });
+  
+  // 使用新工具模块来更新动态光柱效果
+  updateLightPillarEffects(lightPillars as any);
 };
-
-// 定义带有updateSequenceFrame方法的接口
-interface SequenceFrameMesh extends THREE.Mesh {
-  updateSequenceFrame: (time: number) => void;
-  speed?: number; // 上升速度
-  lifecycle?: number; // 生命周期
-  maxLifecycle?: number; // 最大生命周期
-  startY?: number; // 初始Y位置
-  startX?: number; // 初始X位置
-}
 
 // 定义省份相关类型
 interface Feature {
@@ -146,12 +126,17 @@ interface Feature {
 
 let provinceData: ProvinceData
 const { transfromGeoJSON } = useConversionStandardData()
-const { createLightPillar } = useMapMarkedLightPillar({
+const { createLightPillar: createMapLightPillar } = useMapMarkedLightPillar({
   scaleFactor: 1.2,
 })
 const { createCountryFlatLine } = useCountry()
 const { createSequenceFrame } = useSequenceFrameAnimate()
 
+/**
+ * 加载地图数据
+ * @param loader 加载器实例
+ * @returns 加载的地图数据或null
+ */
 const loadMapData = async (loader: EnerV3DCore["loader"]) => {
   try {
     const data = await loader.requestData("./data/map/四川省.json");
@@ -163,57 +148,63 @@ const loadMapData = async (loader: EnerV3DCore["loader"]) => {
   }
 };
 
-// 初始化粒子
-const initParticle = (scene: THREE.Scene, bound: { center: THREE.Vector3, size: THREE.Vector3 }): SequenceFrameMesh[] => {
-  // 获取中心点和中间地图大小
-  let { center, size } = bound;
-  // 构建范围，中间地图的2倍
-  let minX = center.x - size.x;
-  let maxX = center.x + size.x;
-  let minY = center.y - size.y;
-  let maxY = center.y + size.y;
-  let minZ = -6;
-  let maxZ = 6;
+/**
+ * 创建地图边框线
+ * @param provinceData 省份数据
+ * @param renderOrder 渲染顺序，值越大越后渲染
+ * @returns 包含上下边框的组
+ */
+const createBorderLines = (provinceData: ProvinceData, renderOrder: number = 0) => {
+  // 创建上边框 - 流光线
+  const lineTop = createCountryFlatLine(
+    provinceData,
+    {
+      lineColor: 0x00ffff,    // 青色基础线，增加科幻感
+      lineOpacity: 0.2,       // 基础线透明度
+      glowColor: 0x00aaff,    // 更深的蓝色光斑
+      glowOpacity: 2.0,       // 进一步提高光斑透明度
+      glowSpeed: 1.0,         // 进一步提高流动速度
+      speedFactors: [1.8, 1.0, -1.2]  // 调整速度因子，使流光更加分散
+    },
+    "LineLoop",
+    2  // 设置较高的渲染顺序
+  );
+  lineTop.position.z += 0.2;
 
-  let particles: SequenceFrameMesh[] = [];
-  for (let i = 0; i < 16; i++) {
-    const particle = createSequenceFrame({
-      image: "./data/map/上升粒子1.png",
-      width: 180,
-      height: 189,
-      frame: 9,
-      column: 9,
-      row: 1,
-      speed: 0.5,
-    });
+  const lineBottom = createCountryFlatLine(
+    provinceData,
+    {
+      lineColor: 0x61fbfd,    // 青色基础线
+      lineOpacity: 0.5,       // 基础线透明度
+      glowColor: 0x00ffff,    // 亮青色光斑
+      glowOpacity: 0.01,       // 光斑透明度
+      glowSpeed: 0,         // 关闭流动效果
+      speedFactors: [1.5, 0.7, -1.0]  // 速度因子
+    },
+    "LineLoop",
+    -1  // 设置较低的渲染顺序
+  );
+  lineBottom.position.z -= 0.2;
 
-    let particleScale = random(5, 10) / 1000;
-    particle.scale.set(particleScale, particleScale, particleScale);
-    particle.rotation.y = Math.PI / 2;
+  // 创建边框组
+  const borderGroup = new THREE.Group();
+  borderGroup.add(lineTop);
+  borderGroup.add(lineBottom);
 
-    let x = random(minX, maxX);
-    let y = random(minY, maxY);
-    let z = random(minZ, maxZ);
+  // 添加到全局流光线数组中
+  addFlowingLine(lineTop);
+  addFlowingLine(lineBottom);
 
-    particle.position.set(x, y, z);
+  return borderGroup;
+};
 
-    // 添加粒子上升动画的属性
-    particle.speed = random(0.002, 0.01);  // 上升速度
-    particle.lifecycle = 0;  // 当前生命周期
-    particle.maxLifecycle = random(100, 200);  // 最大生命周期
-    particle.startY = y;  // 初始Y位置
-    particle.startX = x;  // 初始X位置
-
-    scene.add(particle);
-    particles.push(particle);
-  }
-
-  return particles;
-}
-
+/**
+ * 初始化3D模型
+ * @param param 初始化参数
+ */
 const initModel = async (param: {
-  topFaceMaterial: THREE.MeshPhongMaterial,
-  sideMaterial: THREE.MeshLambertMaterial,
+  topFaceMaterial: THREE.Material,
+  sideMaterial: THREE.Material,
   scene: THREE.Scene,
 }) => {
   const { topFaceMaterial, sideMaterial, scene } = param;
@@ -222,7 +213,9 @@ const initModel = async (param: {
 
   // 创建包围盒用于跟踪所有地图几何体
   const boundingBox = new THREE.Box3();
-
+  
+      // 用于跟踪是否已创建发光形状
+      // let hasCreatedGlowingShape = false;
   provinceData.features.forEach((elem: Feature) => {
     // 定一个省份对象
     const province = new BaseObject3D();
@@ -230,6 +223,8 @@ const initModel = async (param: {
     const coordinates = elem.geometry.coordinates;
     // city 属性
     const properties = elem.properties;
+
+
 
     // 循环坐标
     coordinates.forEach((multiPolygon: number[][][]) => {
@@ -243,6 +238,7 @@ const initModel = async (param: {
           }
           shape.lineTo(x, y);
         }
+        
         // 拉伸设置
         const extrudeSettings = {
           depth: 0.2,
@@ -255,21 +251,42 @@ const initModel = async (param: {
 
         // 更新网格的世界矩阵以确保包围盒计算正确
         mesh.updateMatrixWorld(true);
+        
+      // 边缘发光效果示例 - 从边缘向内渐变
+// createGlowingShape(shape, {
+//   parentObject: mesh,
+//   glowColor: new THREE.Color(0, 0.5, 1), // 青色发光
+//   glowWidth: 0.3,    // 发光区域宽度较小，更集中在边缘
+//   glowIntensity: 0.8, // 发光强度较高
+//   glowFalloff: 2.5,  // 较陡峭的衰减，使边缘更明显
+//   glowType: 'edge'   // 边缘发光效果
+// });
 
+// 中心发光效果示例 - 从中心向外渐变
+createGlowingShape(shape, {
+  parentObject: mesh,
+  glowColor: new THREE.Color(0, 0.5, 1), // 青色发光
+  glowWidth: 0.5,    // 发光区域宽度较大，覆盖更多区域
+  glowIntensity: 0.6, // 发光强度适中
+  glowFalloff: 1.8,  // 较平缓的衰减，使过渡更平滑
+  glowType: 'center' // 中心发光效果
+});
+        
         // 计算当前mesh的包围盒并扩展总包围盒
         boundingBox.expandByObject(mesh);
         province.add(mesh);
       });
     });
+    
     mapGroup.add(province);
 
     // 使用工具函数创建光柱
     if (properties.centroid || properties.center) {
       const point = properties.centroid || properties.center;
       if (point) {
-        let heightScaleFactor = 0.4 + Math.random() * 2;
+        let heightScaleFactor = 1 + Math.random() * 1.5;
 
-        const light = createLightPillar(point[0], point[1], heightScaleFactor);
+        const light = createMapLightPillar(point[0], point[1], heightScaleFactor);
         light.position.z = 0.31;
         mapGroup.add(light);
 
@@ -310,45 +327,11 @@ const initModel = async (param: {
       }
     }
   });
+  
   console.log('CurrentMap3d: 创建边框...');
-  // 创建上下边框 - 流光线
-  const lineTop = createCountryFlatLine(
-    provinceData,
-    {
-      lineColor: 0xffffff,    // 白色基础线 
-      lineOpacity: 0.6,       // 基础线透明度
-      glowColor: 0x80ffff,    // 淡蓝色光斑
-      glowOpacity: 1,       // 光斑透明度
-      glowSpeed: 2.0,         // 流动速度
-      speedFactors: [1.2, 0.6, -0.8],  // 速度因子
-      depthTest: false        // 深度测试
-    },
-    "LineLoop"
-  );
-  lineTop.position.z += 0.305;
-
-  const lineBottom = createCountryFlatLine(
-    provinceData,
-    {
-      lineColor: 0x61fbfd,    // 青色基础线
-      lineOpacity: 0.8,       // 基础线透明度
-      glowColor: 0x00ffff,    // 亮青色光斑
-      glowOpacity: 0,       // 光斑透明度
-      glowSpeed: 0,         // 流动速度
-      speedFactors: [1.5, 0.7, -1.0],  // 速度因子
-      depthTest: false        // 深度测试
-    },
-    "LineLoop"
-  );
-  lineBottom.position.z -= 0.1905;
-
-  // 添加边线
-  mapGroup.add(lineTop);
-  mapGroup.add(lineBottom);
-
-  // 添加到全局流光线数组中
-  addFlowingLine(lineTop);
-  addFlowingLine(lineBottom);
+  // 创建边框线，设置较高的渲染顺序
+  const borderGroup = createBorderLines(provinceData, 100);
+  mapGroup.add(borderGroup);
 
   // 先进行旋转
   mapGroup.rotation.x = THREE.MathUtils.degToRad(-90);
@@ -374,54 +357,28 @@ const initModel = async (param: {
   const mapCenter = mapBounds.getCenter(new THREE.Vector3());
 
   // 使用封装的初始化粒子函数
-  particleArr = initParticle(scene, {
+  particleArr = initParticles(scene, {
     center: mapCenter,
     size: mapSize
-  });
-
-
-}
-
-/**
- * 更新粒子动画
- * @param {SequenceFrameMesh[]} particles 粒子数组
- * @param {number} time 当前时间
- */
-export const updateParticles = (particles: SequenceFrameMesh[], time: number) => {
-  particles.forEach(particle => {
-    if (particle && particle.updateSequenceFrame) {
-      // 更新序列帧
-      particle.updateSequenceFrame(time);
-
-      // 更新粒子位置 - 沿Y轴上升
-      if (particle.speed && particle.lifecycle !== undefined && particle.maxLifecycle !== undefined &&
-        particle.startY !== undefined && particle.startX !== undefined) {
-
-        // 增加生命周期
-        particle.lifecycle += 1;
-
-        // 向上移动
-        particle.position.y += particle.speed;
-
-        // 当达到最大生命周期时，重置粒子位置
-        if (particle.lifecycle >= particle.maxLifecycle) {
-          particle.position.y = particle.startY;
-          particle.position.x = particle.startX;
-          particle.lifecycle = 0;
-        }
-      }
-    }
-  });
+  }, createSequenceFrame);
 };
 
+/**
+ * 初始化场景
+ * @param core 核心引擎实例
+ */
 export const initScene = async (core: EnerV3DCore) => {
-
   // 获取场景实例
   const scene = core.scene;
 
   // 1. 添加坐标轴辅助
-  const axesHelper = new THREE.AxesHelper(10);
-  scene.add(axesHelper);
+  // const axesHelper = new THREE.AxesHelper(10);
+  // scene.add(axesHelper);
+  
+  // 设置摄像机位置，朝向测试平面
+  core.camera.position.set(0, -30, 20);
+  core.camera.lookAt(0, 0, 20);
+  console.log('摄像机已指向测试平面位置');
 
   const texture = core.loader.textureLoader
   texture.setPath("/data/map/");
@@ -436,20 +393,19 @@ export const initScene = async (core: EnerV3DCore) => {
   textureMap.repeat.set(scale, scale)
   texturefxMap.repeat.set(scale, scale)
 
-  const topFaceMaterial = new THREE.MeshPhongMaterial({
-    map: textureMap,
-    color: 0xb4eeea,
-    combine: THREE.MultiplyOperation,
+  const topFaceMaterial: THREE.Material = new THREE.MeshLambertMaterial({
+    color: 0x123024,
     transparent: true,
-    opacity: 1,
-  })
+    opacity: 0, // todo
+  });
+
   const sideMaterial = new THREE.MeshLambertMaterial({
     color: 0x123024,
     transparent: true,
-    opacity: 0.9,
-  })
-  const bottomZ = -0.2
+    opacity: 0, // todo
+  });
 
+  // 加载数据
   const data = await loadMapData(core.loader)
   console.log('地图数据加载完成，开始转换...');
   if (!data) {
@@ -457,7 +413,8 @@ export const initScene = async (core: EnerV3DCore) => {
     return;
   }
 
-  const convertedData = transfromGeoJSON(data);
+  // 转换数据结构，统一格式
+  const convertedData = transformGeoJSON(data);
   if (!convertedData) {
     console.error("地图数据转换失败");
     return;
@@ -471,14 +428,14 @@ export const initScene = async (core: EnerV3DCore) => {
     console.error("地图数据格式不正确");
     return;
   }
+
   // 准备创建地图
   console.log("准备创建地图");
-
   await initModel({
     topFaceMaterial,
     sideMaterial,
     scene,
-  })
+  });
 
   // 设置动画循环
   function animate() {

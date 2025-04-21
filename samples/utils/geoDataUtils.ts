@@ -1,4 +1,16 @@
 /**
+ * @file 地理数据处理工具
+ * @description 提供GeoJSON数据处理和转换的功能。
+ * 该工具主要用于处理和标准化GeoJSON格式的地理数据，
+ * 确保数据结构一致性，便于地图渲染和地理特征的处理。
+ * 
+ * 主要功能：
+ * - 转换和标准化GeoJSON数据(transformGeoJSON)
+ * - 处理道路网络数据(transformGeoRoad)
+ * - 定义地理数据相关的类型接口
+ */
+
+/**
  * GeoJSON特征类型
  */
 export interface GeoJSONFeature {

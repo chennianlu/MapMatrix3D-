@@ -1,3 +1,15 @@
+/**
+ * @file 国家/地区线条生成工具
+ * @description 提供创建国家、省份等地理区域边界线条的功能。
+ * 该工具基于GeoJSON数据生成可自定义的线条效果，支持普通线条和光效线条，
+ * 适用于地图边界、行政区划显示以及数据可视化的效果增强。
+ * 
+ * 主要功能：
+ * - 从GeoJSON数据创建边界线(createCountryFlatLine)
+ * - 支持多种线条类型(Line、LineLoop、LineSegments、Line2)
+ * - 实现线条动态光效和颜色变化
+ * - 提供全面的线条样式自定义选项
+ */
 import * as THREE from 'three';
 import { GeoJSONData } from './geoDataUtils';
 import { deepMerge } from './index.ts';

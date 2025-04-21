@@ -1,3 +1,16 @@
+/**
+ * @file 坐标系工具
+ * @description 提供各种坐标转换和处理的功能。
+ * 该工具主要处理地理坐标(经纬度)与3D空间坐标的转换，
+ * 提供球面坐标、墨卡托坐标转换，以及Three.js对象的
+ * 包围盒和姿态计算功能。
+ * 
+ * 主要功能：
+ * - 经纬度到球面坐标的转换(geoSphereCoord)
+ * - 经纬度到墨卡托坐标的转换(geoMercatorCoord)
+ * - Three.js对象的包围盒计算(getBoundingBox)
+ * - 在球面上设置物体姿态(setMeshQuaternion)
+ */
 import * as THREE from 'three';
 
 /**
