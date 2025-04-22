@@ -12,6 +12,7 @@
  */
 import * as THREE from 'three';
 import { MeshObject3D } from '../../src/objects/MeshObject3D';
+import { SequenceFrameOptions } from './sequenceFrameUtils';
 
 // 随机数生成函数
 export const random = (min: number, max: number): number => {
@@ -38,7 +39,7 @@ export interface SequenceFrameMesh extends MeshObject3D {
 export const initParticles = (
   scene: THREE.Scene, 
   bound: { center: THREE.Vector3, size: THREE.Vector3 },
-  createSequenceFrame: (options: any) => SequenceFrameMesh
+  createSequenceFrame: (options: Partial<SequenceFrameOptions>) => SequenceFrameMesh
 ): SequenceFrameMesh[] => {
   // 获取中心点和中间地图大小
   let { center, size } = bound;

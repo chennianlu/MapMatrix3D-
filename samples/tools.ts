@@ -30,6 +30,9 @@ let flowingLines: any[] = [];
 let particleArr: SequenceFrameMesh[] = [];
 // 光柱数组
 let lightPillars: THREE.Group[] = [];
+// 旋转特效mesh
+let rotatingApertureMesh: THREE.Mesh | null = null;
+let rotatingPointMesh: THREE.Mesh | null = null;
 
 // 修改弹性动画相关的变量
 const elasticAnimations = new Map<BaseObject3D, {
@@ -480,7 +483,7 @@ const initModel = async (param: {
   const center = rotatedBoundingBox.getCenter(new THREE.Vector3());
 
   // 将mapGroup向相反方向偏移，使包围盒中心与原点对齐
-  mapGroup.position.set(-center.x, -center.y, -center.z);
+  mapGroup.position.set(-center.x, 0, -center.z);
 
   // 将组添加到场景中
   scene.add(mapGroup);
@@ -521,16 +524,16 @@ export const initScene = async (core: EnerV3DCore): Promise<Group3D> => {
 
   const texture = core.loader.textureLoader
   texture.setPath("/data/map/");
-  const textureMap = texture.load("gz-map.jpg")
-  const texturefxMap = texture.load("gz-map-fx.jpg")
+  // const textureMap = texture.load("gz-map.jpg")
+  // const texturefxMap = texture.load("gz-map-fx.jpg")
 
-  textureMap.wrapS = texturefxMap.wrapS = THREE.RepeatWrapping
-  textureMap.wrapT = texturefxMap.wrapT = THREE.RepeatWrapping
-  textureMap.flipY = texturefxMap.flipY = false
-  textureMap.rotation = texturefxMap.rotation = THREE.MathUtils.degToRad(45)
-  const scale = 0.128
-  textureMap.repeat.set(scale, scale)
-  texturefxMap.repeat.set(scale, scale)
+  // textureMap.wrapS = texturefxMap.wrapS = THREE.RepeatWrapping
+  // textureMap.wrapT = texturefxMap.wrapT = THREE.RepeatWrapping
+  // textureMap.flipY = texturefxMap.flipY = false
+  // textureMap.rotation = texturefxMap.rotation = THREE.MathUtils.degToRad(45)
+  // const scale = 0.128
+  // textureMap.repeat.set(scale, scale)
+  // texturefxMap.repeat.set(scale, scale)
 
   const topFaceMaterial: THREE.Material = new THREE.MeshLambertMaterial({
     color: 0x123024,
@@ -575,7 +578,7 @@ export const initScene = async (core: EnerV3DCore): Promise<Group3D> => {
     sideMaterial,
     scene,
   });
-
+  loadSceneGround(core, mapGroup);
   // 设置动画循环
   function animate() {
     requestAnimationFrame(animate);
@@ -614,6 +617,14 @@ export const initScene = async (core: EnerV3DCore): Promise<Group3D> => {
       }
     });
 
+    // 更新旋转动画
+    if (rotatingApertureMesh) {
+      rotatingApertureMesh.rotation.z += 0.0005; // 增加旋转速度
+    }
+    if (rotatingPointMesh) {
+      rotatingPointMesh.rotation.z -= 0.0005; // 增加旋转速度
+    }
+
     // 在每帧更新流光效果
     updateFlowingLines();
 
@@ -633,4 +644,92 @@ export const initScene = async (core: EnerV3DCore): Promise<Group3D> => {
   return mapGroup;
 };
 
-//
+const loadSceneGround = async (core: EnerV3DCore, mapGroup: Group3D) => {
+  const texture = core.loader.textureLoader
+  texture.setPath("/data/map/");
+  const rotatingApertureTexture = texture.load("rotatingAperture.png")
+  const rotatingPointTexture = texture.load("rotating-point2.png")
+  const circlePoint = texture.load("circle-point.png")
+  const sceneBg = texture.load("scene-bg2.png")
+
+  // 获取mapGroup的包围盒
+  const box = new THREE.Box3().setFromObject(mapGroup);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const width = Math.max(size.x, size.y);
+  const bottomZ = 0;
+
+  // 创建一个group来包含所有mesh
+  const groundGroup = new THREE.Group();
+
+  // 初始化旋转光圈
+  const initRotatingAperture = (width: number) => {
+    let plane = new THREE.PlaneGeometry(width, width)
+    let material = new THREE.MeshBasicMaterial({
+      map: rotatingApertureTexture,
+      transparent: true,
+      opacity: 1,
+      depthTest: true,
+    })
+    rotatingApertureMesh = new THREE.Mesh(plane, material)
+    rotatingApertureMesh.position.set(center.x, center.y, bottomZ - 0.1)
+    rotatingApertureMesh.scale.set(1.1, 1.1, 1.1)
+    groundGroup.add(rotatingApertureMesh)
+    return rotatingApertureMesh
+  }
+
+  // 初始化旋转点
+  const initRotatingPoint = (width: number) => {
+    let plane = new THREE.PlaneGeometry(width, width)
+    let material = new THREE.MeshBasicMaterial({
+      map: rotatingPointTexture,
+      transparent: true,
+      opacity: 1,
+      depthTest: true,
+    })
+    rotatingPointMesh = new THREE.Mesh(plane, material)
+    rotatingPointMesh.position.set(center.x, center.y, bottomZ - 0.02)
+    rotatingPointMesh.scale.set(1.1, 1.1, 1.1)
+    groundGroup.add(rotatingPointMesh)
+    return rotatingPointMesh
+  }
+
+  // 初始化背景
+  const initSceneBg = (width: number) => {
+    let plane = new THREE.PlaneGeometry(width * 4, width * 4)
+    let material = new THREE.MeshPhongMaterial({
+      color: 0xffffff,
+      map: sceneBg,
+      transparent: true,
+      opacity: 1,
+      depthTest: true,
+    })
+    let mesh = new THREE.Mesh(plane, material)
+    mesh.position.set(center.x, center.y, bottomZ - 0.2)
+    groundGroup.add(mesh)
+  }
+
+  // 初始化原点
+  const initCirclePoint = (width: number) => {
+    let plane = new THREE.PlaneGeometry(width, width)
+    let material = new THREE.MeshPhongMaterial({
+      color: 0x00ffff,
+      map: circlePoint,
+      transparent: true,
+      opacity: 1,
+    })
+    let mesh = new THREE.Mesh(plane, material)
+    mesh.position.set(center.x, center.y, bottomZ - 0.1)
+    groundGroup.add(mesh)
+  }
+
+  // 创建所有特效
+  initRotatingAperture(width * 1.4);
+  initRotatingPoint(width * 1.2);
+  initSceneBg(width);
+  initCirclePoint(width);
+
+  // 旋转group并添加到场景
+  groundGroup.rotation.x = THREE.MathUtils.degToRad(-90);
+  core.scene.add(groundGroup);
+}
