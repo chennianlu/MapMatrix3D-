@@ -11,6 +11,7 @@
  * - 提供随机数生成和粒子属性设置工具
  */
 import * as THREE from 'three';
+import { MeshObject3D } from '../../src/objects/MeshObject3D';
 
 // 随机数生成函数
 export const random = (min: number, max: number): number => {
@@ -18,7 +19,7 @@ export const random = (min: number, max: number): number => {
 };
 
 // 定义带有updateSequenceFrame方法的接口
-export interface SequenceFrameMesh extends THREE.Mesh {
+export interface SequenceFrameMesh extends MeshObject3D {
   updateSequenceFrame: (time: number) => void;
   speed?: number; // 上升速度
   lifecycle?: number; // 生命周期
@@ -60,7 +61,8 @@ export const initParticles = (
       row: 1,
       speed: 0.5,
     });
-
+    // 不参与射线检测
+    particle.pickedEnable = false;
     let particleScale = random(5, 10) / 1000;
     particle.scale.set(particleScale, particleScale, particleScale);
     particle.rotation.y = Math.PI / 2;

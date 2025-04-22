@@ -11,6 +11,7 @@
  * - 应用内发光材质并设置适当的缩放和位置
  */
 import * as THREE from 'three';
+import { MeshObject3D } from '../../src/objects/MeshObject3D';
 import { createGradientGlowMaterial } from './createGradientGlowMaterial';
 
 interface GlowingShapeOptions {
@@ -58,7 +59,7 @@ const normalizeUVs = (geometry: THREE.ShapeGeometry): void => {
  * @param options 配置选项
  * @returns 创建的发光多边形网格
  */
-export const createGlowingShape = (shape: THREE.Shape, options: GlowingShapeOptions) => {
+export const createGlowingShape = (shape: THREE.Shape, options: GlowingShapeOptions): MeshObject3D => {
   // 设置默认值
   const {
     parentObject,
@@ -95,8 +96,8 @@ export const createGlowingShape = (shape: THREE.Shape, options: GlowingShapeOpti
   (glowMaterial as THREE.ShaderMaterial).depthWrite = false;
   
   // 创建网格
-  const shapeMesh = new THREE.Mesh(geometry, glowMaterial);
-  
+  const shapeMesh = new MeshObject3D(geometry, glowMaterial);
+  shapeMesh.userData.shape = 'glowingShape';
   // 设置渲染顺序
   shapeMesh.renderOrder = 1;
   

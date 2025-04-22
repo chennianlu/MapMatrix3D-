@@ -5,38 +5,44 @@ import { BaseObject3D } from '../../objects/BaseObject3D';
 
 interface Options {
   camera: THREE.Camera;
-  canvas: HTMLCanvasElement;
+  canvas: HTMLCanvasElement;   
   scene: THREE.Scene;
+}
+
+// 定义一个类型守卫函数
+function isObject3DType(obj: any): obj is Object3DType {
+  return obj instanceof BaseObject3D;
+}
+
+// 定义一个类型转换函数
+function asObject3DType(obj: THREE.Object3D): Object3DType | null {
+  return isObject3DType(obj) ? obj : null;
 }
 
 // todo  level控制放到接口层处理
 class SelectionTools {
-  private _camera: THREE.Camera;
-  private _scene: THREE.Scene;
-  private _canvas: HTMLCanvasElement;
-  private _mouse: THREE.Vector2;
-  private _raycaster: THREE.Raycaster;
-  protected raycasterObjs: THREE.Object3D[];
+  private _camera!: THREE.Camera;
+  private _scene!: THREE.Scene;
+  private _canvas!: HTMLCanvasElement;
+  private _mouse = new THREE.Vector2();
+  private _raycaster = new THREE.Raycaster(undefined, undefined, 0, 6000);
+  public raycasterObjs: (THREE.Object3D | Object3DType)[] = [];
   // 禁止层级切换
-  public pauseLevelChange: boolean;
+  public pauseLevelChange: boolean = false;
   // 禁止层级切换过程的飞行动画
-  public pauseLevelChangeAnimation: boolean;
+  public pauseLevelChangeAnimation: boolean = false;
   // 禁止选中物体
-  public pauseSelection: boolean;
+  public pauseSelection: boolean = false;
 
-  public selected: Object3DType | null;
-  // 当前层级对象
-  public curLevel: Object3DType | null;
-  //  上一层级对象
-  public preLevel: Object3DType | null;
+  public selected: Object3DType | null = null;
   // 绑定场景根节点，用于控制场景层级切换
-  private _sceneRoot: Object3DType | THREE.Scene;
+  private _sceneRoot!: Object3DType | THREE.Scene;
 
-  public pickedPoints: THREE.Vector3[];
-  private _trashStorage: any[]; // 存储层级切换过程设置效果的容器
+  public pickedPoints: THREE.Vector3[] = [];
+  private _trashStorage: any[] = []; // 存储层级切换过程设置效果的容器
 
   static _instance: SelectionTools;
-  private _detectPickevent: (e: MouseEvent) => void | null;
+  private _detectPickevent: ((e: MouseEvent) => void) | null = null;
 
   constructor() {
     if (new.target !== SelectionTools) {
@@ -60,8 +66,6 @@ class SelectionTools {
       this.pauseLevelChange = false;
       this.pauseLevelChangeAnimation = false;
       this.selected = null;
-      this.curLevel = null;
-      this.preLevel = null;
     }
     return SelectionTools._instance;
   }
@@ -86,15 +90,9 @@ class SelectionTools {
     this._mouseMove();
     // 注册默认点击事件
     this._handleClick();
-    //监听层级变化事件  设置射线拾取作用域空间为当前层级子节点
-    coreEvent.on('CORE_LEVEL_CHANGE', (cur, pre) => {
-      this.raycasterObjs = cur?.children || [];
-      // this._transparentClear();
-      // this._transparentEffect(this.curLevel);
-    });
   }
 
-  _transparentEffect(obj) {
+  _transparentEffect(obj: Object3DType) {
     if (obj.parent === this._scene) return;
     // 设置当前节点兄弟节点半透明
     const sibilingObjs = obj.parent?.children;
@@ -126,7 +124,7 @@ class SelectionTools {
     const canvas = this._canvas;
     coreEvent.on(
       'POINT_MOVE',
-      function (e) {
+      function (e: MouseEvent) {
         _this._mouse.set(
           (e.offsetX / canvas.offsetWidth) * 2 - 1,
           1 - (e.offsetY / canvas.offsetHeight) * 2
@@ -167,7 +165,6 @@ class SelectionTools {
       'POINT_UP',
       function (e: MouseEvent) {
         if (e.button !== 2) return;
-        //获取当前层级
         _this._pointUp();
       },
       {
@@ -180,17 +177,17 @@ class SelectionTools {
   /**
    * 获取当前场景中的默认可拾取范围
    */
-  getDefaultScope(obj?: Array<any>): Array<THREE.Object3D> {
+  getDefaultScope(obj?: Object3DType[]): Array<Object3DType> {
     const list = this._scene.children;
-    let result = [];
+    const result: Object3DType[] = [];
     for (let i = 0; i < list.length; i++) {
-      // let obj = list[i];
-      // if (obj instanceof BaseObject3D) {
-      //     result.push(obj);
-      // }
+      const child = list[i];
+      if (isObject3DType(child)) {
+        result.push(child);
+      }
     }
-    if (obj) result = result.concat(obj);
-    this.raycasterObjs = result;
+    if (obj) result.push(...obj);
+    this.raycasterObjs = result as unknown as (THREE.Object3D | Object3DType)[];
     return result;
   }
 
@@ -199,17 +196,17 @@ class SelectionTools {
    * @param option 由于两个设定参数均为可选的，统一设定配置项
    * @returns 返回射线拾取全部对象
    */
-  calculateSelection(option: { objects?: THREE.Object3D[] | null; selectObject?: THREE.Object3D }) {
+  calculateSelection(option: { objects?: (THREE.Object3D | Object3DType)[] | null; selectObject?: Object3DType }) {
     let { objects = this.raycasterObjs } = option;
     const { selectObject } = option;
-    if (!Array.isArray(objects)) objects = [objects];
+    if (!Array.isArray(objects)) objects = objects ? [objects] : [];
     this._raycaster.setFromCamera(this._mouse, this._camera);
     if (selectObject) {
       // 当前拾取范围内需要过滤的物体
       const objIndex = objects.indexOf(selectObject);
       if (objIndex !== -1) objects.splice(objIndex, 1);
     }
-    const intersectObjects = this._raycaster.intersectObjects(objects, true);
+    const intersectObjects = this._raycaster.intersectObjects(objects as THREE.Object3D[], true);
     if (intersectObjects?.length > 0) {
       return intersectObjects[0];
     } else {
@@ -222,11 +219,11 @@ class SelectionTools {
    * @params objects 控制射线的拾取范围  TODO 后续可以通过动态改变优化射线性能
    * @returns 返回当前射线拾取物体
    */
-  getPickedObject(objects = this.raycasterObjs): Object3DType {
+  getPickedObject(objects = this.raycasterObjs): Object3DType | null {
     if (!Array.isArray(objects)) objects = [objects];
-    let curSel = null;
+    let curSel: Object3DType | null = null;
     this._raycaster.setFromCamera(this._mouse, this._camera);
-    const intersectObjects = this._raycaster.intersectObjects(objects, true);
+    const intersectObjects = this._raycaster.intersectObjects(objects as THREE.Object3D[], true);
 
     //过滤掉所有不可见物体
     const filteredIntersectObjects = intersectObjects.filter(item => item.object.visible === true);
@@ -234,21 +231,38 @@ class SelectionTools {
     if (!filteredIntersectObjects[0]) return null;
     const object = filteredIntersectObjects[0].object;
 
-    const getPartObj = obj => {
-      if (!obj.parent) return null;
-      //从业务对象判断是否可以拾取 并且节点的父物体是根节点
-      if (obj instanceof BaseObject3D) {
-        if (obj.pickedEnable === true) {
-          return obj;
-        } else {
-          return null;
-        }
-      } else {
-        return getPartObj(obj.parent);
+    const getPartObj = (obj: THREE.Object3D): Object3DType | null => {
+      if (!obj) return null;
+      const converted = asObject3DType(obj);
+      if (converted && converted.pickedEnable === true) {
+        return converted;
       }
+      if (obj.parent) {
+        const parentObj = obj.parent;
+        if (parentObj instanceof BaseObject3D) {
+          if (parentObj.pickedEnable === true) {
+            return parentObj;
+          }
+        }
+        if (parentObj instanceof THREE.Object3D) {
+          const parentResult = getPartObj(parentObj);
+          if (parentResult && parentResult instanceof BaseObject3D && parentResult.pickedEnable === true) {
+            return parentResult;
+          }
+        }
+      }
+      return null;
     };
-    curSel = getPartObj(object);
 
+    try {
+      const result = getPartObj(object);
+      if (result && result instanceof BaseObject3D && result.pickedEnable === true) {
+        curSel = result;
+      }
+    } catch (error) {
+      console.error('Error in getPickedObject:', error);
+      curSel = null;
+    }
     return curSel;
   }
 
@@ -256,7 +270,7 @@ class SelectionTools {
    * 设置射线远面
    * @param val {Number}
    */
-  setRayCasterFar(val) {
+  setRayCasterFar(val: number) {
     if (typeof val !== 'number') return;
     this._raycaster.far = val;
   }
@@ -266,18 +280,16 @@ class SelectionTools {
    * TODO 双击操作也触发了  后面排查
    * @returns void
    */
-
   private _click(object?: Object3DType | null): void {
     if (!object) object = this.getPickedObject();
-    const target = this._getParentFromCurLevel(object);
-    if (target) {
+    if (object) {
       // 触发物体级别事件
-      target.emit('CLICK', target);
+      object.emit('CLICK', object);
     }
     //判断当前是否为禁用鼠标状态
     if (this.pauseSelection) return;
-    this.selected = target;
-    coreEvent.dispatch('CORE_OBJECT_SELECTED', [target, 'single']);
+    this.selected = object;
+    coreEvent.dispatch('CORE_OBJECT_SELECTED', [object, 'single']);
   }
 
   /**
@@ -285,25 +297,10 @@ class SelectionTools {
    * @returns void
    */
   private _pointUp(): void {
-    if (!this.curLevel) return;
-    // 限制层级回退根节点
-    if (this.curLevel.parent === this._sceneRoot) return;
     //判断当前是否为禁用鼠标状态
     if (this.pauseLevelChange) return;
     this.selected = null;
     coreEvent.dispatch('CORE_OBJECT_SELECTED', [null, 'single']);
-
-    const targetObj = this.curLevel.parent;
-    if (targetObj) {
-      // 触发层级变化事件
-      this.preLevel = this.curLevel;
-      this.curLevel = targetObj as Object3DType;
-      coreEvent.dispatch('CORE_LEVEL_CHANGE', [
-        this.curLevel,
-        this.preLevel,
-        this.pauseLevelChangeAnimation,
-      ]);
-    }
   }
 
   /**
@@ -312,46 +309,17 @@ class SelectionTools {
    *
    * @private
    * @param {(Object3DType | null)} object
-   * @param {?boolean} [crossLevel] 是否为跨层级切换 默认获取当前层级父节点
    */
-  private _dbClick(object: Object3DType | null, crossLevel?: boolean) {
-    if (!object) object = this.getPickedObject();
-    if (!object) return;
+  private _dbClick(object: Object3DType | null) {
+    if (!object) {
+      const picked = this.getPickedObject();
+      if (!picked) return;
+      object = picked;
+    }
     // 触发物体级别事件
     object.emit('DBCLICK', object);
     //判断当前是否为禁用鼠标状态
     if (this.pauseLevelChange) return;
-    //向上查找到当前根节点下的父节点
-    let target;
-    if (crossLevel) {
-      target = object;
-    } else {
-      target = this._getParentFromCurLevel(object);
-    }
-    if (!target) return;
-    this.preLevel = this.curLevel;
-    this.curLevel = target;
-    // 触发层级变化事件
-    target.emit('CORE_LEVEL_CHANGE', target);
-    coreEvent.dispatch('CORE_LEVEL_CHANGE', [
-      this.curLevel,
-      this.preLevel,
-      this.pauseLevelChangeAnimation,
-    ]);
-  }
-
-  _getParentFromCurLevel(object: Object3DType): Object3DType | null {
-    let res;
-    const loop = (obj: any) => {
-      if (!obj || !obj.parent) return null;
-      if (obj.parent === this.curLevel) {
-        res = obj;
-      } else {
-        loop(obj.parent);
-      }
-    };
-    loop(object);
-    return res;
   }
 
   /**
@@ -380,37 +348,15 @@ class SelectionTools {
   }
 
   /**
-   * 设置当前选择层级
-   * @date 2024/2/18 - 13:31:16
-   *
-   * @param {Object3DType} object
-   * @param {?boolean} [crossLevel]
-   * @returns {boolean}
-   */
-  setSceneLevel(object: Object3DType, crossLevel?: boolean) {
-    if (!object || this.pauseSelection) return false;
-    this._dbClick(object, crossLevel);
-    return true;
-  }
-
-  /**
-   * 获取当前场景层级
-   * @returns
-   */
-  getSceneLevel(): Object3DType | null {
-    return this.curLevel;
-  }
-
-  /**
    * 检测拾取坐标点位信息
    * @param state  开启状态  如果state为false会关闭时间并清空缓存点位
    * @param scope  限制拾取范围
    */
-  detectPickPoints(state: boolean, scope: THREE.Object3D[] | null) {
+  detectPickPoints(state: boolean, scope: Object3DType[] | null) {
     const _this = this;
     const func = (e: MouseEvent) => {
       const pickedMsg = _this.calculateSelection({ objects: scope });
-      if (pickedMsg) {
+      if (pickedMsg && pickedMsg.point instanceof THREE.Vector3) {
         _this.pickedPoints.push(pickedMsg.point);
       }
       console.log('拾取点位列表：', this.pickedPoints);

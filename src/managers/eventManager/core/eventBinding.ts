@@ -10,7 +10,7 @@ export class EventBinding {
   private _intro: string;
   private _id: string | null;
   private _priority: number;
-  private _listener: any;
+  private _listener: (...args: any[]) => any;
   private _isOnce: boolean;
   private _Event: any[] | string;
 
@@ -23,7 +23,7 @@ export class EventBinding {
    * @param options {Object} 拓展参数
    * @param options options.des
    */
-  constructor(event: string, listener: any, isOnce: boolean, options: Options = {}) {
+  constructor(event: string, listener: (...args: any[]) => any, isOnce: boolean, options: Options = {}) {
     /**
      * 事件描述
      * @type Number
@@ -78,13 +78,13 @@ export class EventBinding {
    * @param {*} [paramsArr] 参数
    * @return {*} Value returned by the listener.
    */
-  execute() {
+  execute(...args: any[]): any {
     let handlerReturn;
     if (this.active && !!this._listener) {
       // handlerReturn = this._listener.apply(this.context, params);
       // excute func
       // eslint-disable-next-line prefer-rest-params
-      handlerReturn = this._listener(...arguments);
+      handlerReturn = this._listener(...args);
       if (this._isOnce) {
         this.detach();
       }
@@ -97,9 +97,7 @@ export class EventBinding {
    * @return {Function|null}
    */
   detach() {
-    // @ts-ignore
-    if (this._Event.indexOf(this) !== -1) {
-      // @ts-ignore
+    if (Array.isArray(this._Event) && this._Event.indexOf(this) !== -1) {
       this._Event.splice(this._Event.indexOf(this), 1);
       this._destroy();
     }
@@ -108,27 +106,27 @@ export class EventBinding {
   /**
    * @return {boolean}
    */
-  isOnce() {
+  isOnce(): boolean {
     return this._isOnce;
   }
 
   /**
    * @param bool {Boolean}
    */
-  pause(bool: boolean) {
+  pause(bool: boolean): void {
     this.active = !bool;
   }
   /**
    * @return {Function}
    */
-  getListener() {
+  getListener(): (...args: any[]) => any {
     return this._listener;
   }
 
   /**
    * @return {Event}
    */
-  getEvent() {
+  getEvent(): any[] | string {
     return this._Event;
   }
 
@@ -136,8 +134,8 @@ export class EventBinding {
    * 删除绑定实例
    * @private
    */
-  _destroy() {
+  _destroy(): void {
     this._Event = [];
-    delete this._listener;
+    this._listener = () => undefined;
   }
 }
