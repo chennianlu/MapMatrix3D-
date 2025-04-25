@@ -20,7 +20,7 @@ export const random = (min: number, max: number): number => {
 };
 
 // 定义带有updateSequenceFrame方法的接口
-export interface SequenceFrameMesh extends MeshObject3D {
+export interface SequenceFrameMesh extends THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
   updateSequenceFrame: (time: number) => void;
   speed?: number; // 上升速度
   lifecycle?: number; // 生命周期
@@ -63,7 +63,6 @@ export const initParticles = (
       speed: 0.5,
     });
     // 不参与射线检测
-    particle.pickedEnable = false;
     let particleScale = random(5, 10) / 1000;
     particle.scale.set(particleScale, particleScale, particleScale);
     particle.rotation.y = Math.PI / 2;

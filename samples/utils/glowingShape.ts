@@ -107,8 +107,6 @@ export const createGlowingShape = (shape: THREE.Shape, options: GlowingShapeOpti
   const parentSize = new THREE.Vector3();
   parentBoundingBox.getSize(parentSize);
   
-  // 设置位置
-  shapeMesh.position.z = parentSize.z / 2 + 0.1;
   
   // 更新材质
   (glowMaterial as any).updateFromGeometry(geometry);

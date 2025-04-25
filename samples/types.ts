@@ -9,6 +9,7 @@ export interface ProvinceData {
       name: string;
       centroid?: [number, number];
       center?: [number, number];
+      level?: string;
     };
   }>;
 }

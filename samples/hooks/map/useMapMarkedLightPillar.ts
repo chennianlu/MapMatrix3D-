@@ -47,12 +47,6 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
     defaultOptions = deepMerge(defaultOptions, options || {});
     // 纹理加载器
     const textureLoader = new THREE.TextureLoader();
-    // 射线拾取对象
-    const raycaster = new THREE.Raycaster();
-    let containerWidth = window.innerWidth;
-    let containerHeight = window.innerHeight;
-    // 对象属性
-    let getBoundingClientRect: DOMRect | null = null;
 
     /**
      * 创建标记点
@@ -81,7 +75,7 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
      * 创建光圈
      * @returns 光圈网格
      */
-    const createLightHalo = (): MeshWithTween => {
+    const createLightHalo = (): THREE.Mesh => {
         // 标记点：几何体，材质
         const geometry = new THREE.PlaneGeometry(1, 1);
         const material = new THREE.MeshBasicMaterial({
@@ -92,33 +86,12 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
             transparent: true,
             depthWrite: false, //禁止写入深度缓冲区数据
         });
-        let mesh = new THREE.Mesh(geometry, material) as MeshWithTween;
+        let mesh = new THREE.Mesh(geometry, material);
         mesh.renderOrder = 98;
         mesh.name = 'createLightHalo';
         // 缩放
         const scale = 0.3 * defaultOptions.scaleFactor;
         mesh.scale.set(scale, scale, scale);
-        // 动画延迟时间
-        const delay = random(0, 2000);
-        // 动画：透明度缩放动画
-        mesh.tween1 = new TWEEN.Tween({ scale: scale, opacity: 0 })
-            .to({ scale: scale * 1.5, opacity: 1 }, 1000)
-            .delay(delay)
-            .onUpdate(params => {
-                let { scale, opacity } = params;
-                mesh.scale.set(scale, scale, scale);
-                mesh.material.opacity = opacity;
-            });
-        mesh.tween2 = new TWEEN.Tween({ scale: scale * 1.5, opacity: 1 })
-            .to({ scale: scale * 2, opacity: 0 }, 1000)
-            .onUpdate(params => {
-                let { scale, opacity } = params;
-                mesh.scale.set(scale, scale, scale);
-                mesh.material.opacity = opacity;
-            });
-        mesh.tween1.chain(mesh.tween2);
-        mesh.tween2.chain(mesh.tween1);
-        mesh.tween1.start();
         return mesh;
     };
 
@@ -205,64 +178,11 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
         return mesh;
     };
 
-    /**
-     * 射线拾取，返回选中的mesh
-     * @param event 鼠标事件
-     * @param container 容器元素
-     * @param camera 相机
-     * @param mesh 需要检测的网格对象或数组
-     * @returns 相交对象数组
-     */
-    const getRaycasterObj = (
-        event: MouseEvent,
-        container: HTMLElement,
-        camera: THREE.Camera,
-        mesh: THREE.Object3D | THREE.Object3D[]
-    ): THREE.Intersection[] => {
-        //屏幕坐标转WebGL标准设备坐标
-        if (!getBoundingClientRect) {
-            getBoundingClientRect = container.getBoundingClientRect();
-            containerWidth = container.offsetWidth;
-            containerHeight = container.offsetHeight;
-        }
-        var x = ((event.clientX - getBoundingClientRect.left) / containerWidth) * 2 - 1;
-        var y = -((event.clientY - getBoundingClientRect.top) / containerHeight) * 2 + 1;
 
-        //通过鼠标单击位置标准设备坐标和相机参数计算射线投射器`Raycaster`的射线属性.ray
-        raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
-        //返回.intersectObjects()参数中射线选中的网格模型对象
-        // 未选中对象返回空数组[],选中一个数组1个元素，选中两个数组两个元素
-        var intersects = raycaster.intersectObjects(Array.isArray(mesh) ? mesh : [mesh]);
-        return intersects;
-    };
-
-    /**
-     * 选中光柱
-     * @param event 鼠标事件
-     * @param container 容器元素
-     * @param camera 相机
-     * @param mesh 光柱网格
-     * @returns 被选中的光柱或null
-     */
-    const chooseLightPillar = (
-        event: MouseEvent,
-        container: HTMLElement,
-        camera: THREE.Camera,
-        mesh: THREE.Object3D
-    ): THREE.Object3D | null => {
-        let intersects = getRaycasterObj(event, container, camera, mesh);
-        if (intersects && intersects.length) {
-            return mesh;
-        } else {
-            return null;
-        }
-    };
 
     return {
         createLightPillar,
         setLightPillarColor,
         setMeshQuaternion,
-        getRaycasterObj,
-        chooseLightPillar,
     };
 } 

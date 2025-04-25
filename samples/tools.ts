@@ -6,10 +6,8 @@
  */
 import * as THREE from "three"
 import { ProvinceData } from './types';
-import TWEEN from '@tweenjs/tween.js';
-import { Group3D, BaseObject3D } from '../src/index';
+import { Group3D, BaseObject3D, coreEvent } from '../src/index';
 import { MeshObject3D } from '../src/objects/MeshObject3D';
-import useConversionStandardData from "./hooks/useConversionStandardData"
 import useCountry from "./hooks/useCountry.ts"
 import useMapMarkedLightPillar from "./hooks/map/useMapMarkedLightPillar.ts"
 import useSequenceFrameAnimate from "./hooks/useSequenceFrameAnimate"
@@ -19,23 +17,12 @@ import type { EnerV3DCore } from '../src/APP';
 
 import { createGlowingShape } from './utils/glowingShape';
 import { initParticles, updateParticles, SequenceFrameMesh } from './utils/particleEffects';
-import { updateLightPillars as updateLightPillarEffects } from './utils/lightPillarEffects';
 import { transformGeoJSON } from './utils/geoDataUtils';
 
-// 全局时钟
-const clock = new THREE.Clock();
-// 全局引用
-let flowingLines: any[] = [];
-// 粒子数组
-let particleArr: SequenceFrameMesh[] = [];
-// 光柱数组
-let lightPillars: THREE.Group[] = [];
-// 旋转特效mesh
-let rotatingApertureMesh: THREE.Mesh | null = null;
-let rotatingPointMesh: THREE.Mesh | null = null;
-
-// 修改弹性动画相关的变量
-const elasticAnimations = new Map<BaseObject3D, {
+/**
+ * 动画状态接口定义
+ */
+interface AnimationState {
   targetY: number;
   velocity: number;
   damping: number;
@@ -43,693 +30,916 @@ const elasticAnimations = new Map<BaseObject3D, {
   initialY: number;
   isAnimating: boolean;
   isRising: boolean;
-  originalGlowColor?: THREE.Color;
-}>();
+}
 
-/**
- * 查找发光形状网格
- * @param object 要查找的对象
- * @returns 发光形状网格数组
- */
-const findGlowingShapes = (object: BaseObject3D): MeshObject3D[] => {
-  const glowingShapes: MeshObject3D[] = [];
-  object.traverse((child) => {
-    if (child instanceof MeshObject3D && child.userData.shape === 'glowingShape') {
-      glowingShapes.push(child);
-    }
-  });
-  return glowingShapes;
-};
+interface ProvinceProperties {
+  name: string;
+  centroid?: [number, number];
+  center?: [number, number];
+  level?: 'province' | 'city' | 'district';
+  adcode?: number;
+  childrenNum?: number;
+  parent?: { adcode: number };
+  subFeatureIndex?: number;
+  acroutes?: number[];
+}
 
-/**
- * 设置发光效果参数
- * @param shape 发光形状网格
- * @param isRising 是否在上升状态
- */
-const setGlowEffect = (shape: MeshObject3D, isRising: boolean) => {
-  const material = shape.material as THREE.ShaderMaterial;
-  if (isRising) {
-    // 上升时设置更强烈的发光效果
-    material.uniforms.glowColor.value.set(0xffa500); // 改为橙黄色
-    material.uniforms.glowWidth.value = 0.8; // 增加发光宽度
-    material.uniforms.glowIntensity.value = 0.6; // 发光强度
-    material.uniforms.glowFalloff.value = 1.5; // 减小衰减，使发光更均匀
-  } else {
-    // 恢复原始发光效果
-    material.uniforms.glowColor.value.set(0x00aaff); // 恢复为蓝色
-    material.uniforms.glowWidth.value = 0.5; // 恢复原始宽度
-    material.uniforms.glowIntensity.value = 0.6; // 恢复原始强度
-    material.uniforms.glowFalloff.value = 1.8; // 恢复原始衰减
-  }
-};
-
-/**
- * 更新流光动画效果
- * 需要在渲染循环中调用此函数
- */
-export const updateFlowingLines = () => {
-  const time = clock.getElapsedTime();
-  flowingLines.forEach(line => {
-    if (line && line.updateAnimation) {
-      line.updateAnimation(time);
-    }
-  });
-};
-
-/**
- * 添加要更新的流光线
- * @param line 带有updateAnimation方法的线条对象
- */
-export const addFlowingLine = (line: any) => {
-  if (line) {
-    flowingLines.push(line);
-  }
-};
-
-/**
- * 添加光柱到管理数组
- * @param lightPillar 光柱对象
- */
-export const addLightPillar = (lightPillar: THREE.Group) => {
-  if (lightPillar) {
-    lightPillars.push(lightPillar);
-    initLightPillarDiffusion(lightPillar);
-  }
-};
-
-/**
- * 初始化光柱扩散效果
- * @param lightPillar 光柱对象
- */
-const initLightPillarDiffusion = (lightPillar: THREE.Group) => {
-  const lightHalo = lightPillar.children.find(child => child.name === 'createLightHalo');
-  if (!lightHalo) return;
-
-  const initialScale = lightHalo.scale.x;
-  const maxScale = initialScale * 2.5;
-
-  lightHalo.userData = {
-    initialScale: initialScale,
-    maxScale: maxScale,
-    currentScale: initialScale,
-    speed: 0.001
-  };
-};
-
-/**
- * 更新光柱扩散效果
- */
-export const updateLightPillars = () => {
-  // 对于每个内部需要自定义更新的光柱进行处理
-  lightPillars.forEach(lightPillar => {
-    const lightHalo = lightPillar.children.find(child => child.name === 'createLightHalo');
-    if (!lightHalo || !lightHalo.userData) return;
-
-    const { initialScale, maxScale, speed } = lightHalo.userData;
-    lightHalo.userData.currentScale += speed;
-
-    if (lightHalo.userData.currentScale >= maxScale) {
-      lightHalo.userData.currentScale = initialScale;
-    }
-
-    const scale = lightHalo.userData.currentScale;
-    const scaleRange = maxScale - initialScale;
-    const scaleProgress = (scale - initialScale) / scaleRange;
-    const opacity = 1 - scaleProgress;
-
-    lightHalo.scale.set(scale, scale, scale);
-    ((lightHalo as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = opacity;
-  });
-  
-  // 使用新工具模块来更新动态光柱效果
-  updateLightPillarEffects(lightPillars as any);
-};
-
-// 定义省份相关类型
-interface Feature {
+interface ProvinceFeature {
+  type: string;
+  properties: ProvinceProperties;
   geometry: {
+    type: string;
     coordinates: number[][][][];
-  };
-  properties: {
-    name: string;
-    centroid?: [number, number];
-    center?: [number, number];
   };
 }
 
-let provinceData: ProvinceData
-const { transfromGeoJSON } = useConversionStandardData()
-const { createLightPillar: createMapLightPillar } = useMapMarkedLightPillar({
-  scaleFactor: 1.2,
-})
-const { createCountryFlatLine } = useCountry()
-const { createSequenceFrame } = useSequenceFrameAnimate()
-
 /**
- * 加载地图数据
- * @param loader 加载器实例
- * @returns 加载的地图数据或null
+ * 3D地图场景管理类
+ * 负责管理地图的创建、动画效果和交互
  */
-const loadMapData = async (loader: EnerV3DCore["loader"]) => {
-  try {
-    const data = await loader.requestData("./data/map/四川省.json");
-    console.log("四川省地图数据:", data);
-    return data;
-  } catch (error) {
-    console.error("加载四川省地图数据失败", error);
-    return null;
+class GeoGround {
+  /**
+   * 3D核心引擎实例
+   */
+  private core: EnerV3DCore;
+
+  /**
+   * 地图组，包含所有省份对象
+   */
+  private mapGroup: Group3D;
+
+  /**
+   * 时钟对象，用于控制动画时间
+   */
+  private clock: THREE.Clock;
+
+  /**
+   * 流光线条数组，用于存储地图边界的光效
+   */
+  private flowingLines: any[];
+
+  /**
+   * 粒子效果数组，用于存储场景中的粒子效果
+   */
+  private particleArr: SequenceFrameMesh[];
+
+  /**
+   * 光柱数组，用于存储每个省份的光柱效果
+   */
+  private lightPillars: THREE.Group[];
+
+  /**
+   * 旋转光圈网格，用于创建地面旋转效果
+   */
+  private rotatingApertureMesh: THREE.Mesh | null;
+
+  /**
+   * 旋转点网格，用于创建地面旋转效果
+   */
+  private rotatingPointMesh: THREE.Mesh | null;
+
+  /**
+   * 弹性动画映射表，用于存储每个省份的动画状态
+   */
+  private elasticAnimations: Map<BaseObject3D, AnimationState>;
+
+  /**
+   * 初始化标志，表示场景是否已经初始化
+   */
+  private isInitialized: boolean = false;
+
+  /**
+   * 光柱动画状态接口
+   */
+  private lightPillarAnimations: Map<THREE.Group, {
+    scale: number;
+    currentScale: number;
+    targetScale: number;
+    opacity: number;
+    targetOpacity: number;
+    isExpanding: boolean;
+    startTime: number;
+    duration: number;
+  }> = new Map();
+
+  /**
+   * 地理层级关系枚举
+   */
+  private readonly GEO_LEVEL = {
+    COUNTRY_PROVINCE: 'country_province',  // 国家-省级关系
+    PROVINCE_CITY: 'province_city',        // 省-市级关系
+    CITY_DISTRICT: 'city_district'         // 市-区级关系
+  };
+
+  /**
+   * 当前地理层级
+   */
+  private currentGeoLevel: string = this.GEO_LEVEL.COUNTRY_PROVINCE;
+
+  /**
+   * 省份数据，包含地理信息和属性
+   */
+  private provinceData: ProvinceData | null = null;
+
+  /**
+   * 地理板块和边框线的高度设置
+   */
+  private geoHeight = {
+    depth: 0.2      // 地理板块拉伸深度
+  };
+
+  /**
+   * 文字标签的高度设置
+   */
+  private textHeight = {
+    radioScale: 0.2  // 文字缩放比例
+  };
+
+  /**
+   * 光柱的高度设置
+   */
+  private pillarHeight = {
+    scale: 1,        // 光柱缩放比例
+    height: 1        // 光柱高度
+  };
+
+  /**
+   * 构造函数
+   * @param core 3D核心引擎实例
+   */
+  constructor(core: EnerV3DCore) {
+    this.core = core;
+    this.clock = new THREE.Clock();
+    this.flowingLines = [];
+    this.particleArr = [];
+    this.lightPillars = [];
+    this.rotatingApertureMesh = null;
+    this.rotatingPointMesh = null;
+    this.elasticAnimations = new Map();
+    this.mapGroup = new Group3D();
   }
-};
 
-/**
- * 创建地图边框线
- * @param provinceData 省份数据
- * @param renderOrder 渲染顺序，值越大越后渲染
- * @returns 包含上下边框的组
- */
-const createBorderLines = (provinceData: ProvinceData, renderOrder: number = 0) => {
-  // 创建上边框 - 流光线
-  const lineTop = createCountryFlatLine(
-    provinceData,
-    {
-      lineColor: 0x00ffff,    // 青色基础线，增加科幻感
-      lineOpacity: 0.2,       // 基础线透明度
-      glowColor: 0x00aaff,    // 更深的蓝色光斑
-      glowOpacity: 2.0,       // 进一步提高光斑透明度
-      glowSpeed: 1.0,         // 进一步提高流动速度
-      speedFactors: [1.8, 1.0, -1.2]  // 调整速度因子，使流光更加分散
-    },
-    "LineLoop",
-    2  // 设置较高的渲染顺序
-  );
-  lineTop.position.z += 0.2;
-
-  const lineBottom = createCountryFlatLine(
-    provinceData,
-    {
-      lineColor: 0x61fbfd,    // 青色基础线
-      lineOpacity: 0.5,       // 基础线透明度
-      glowColor: 0x00ffff,    // 亮青色光斑
-      glowOpacity: 0.01,       // 光斑透明度
-      glowSpeed: 0,         // 关闭流动效果
-      speedFactors: [1.5, 0.7, -1.0]  // 速度因子
-    },
-    "LineLoop",
-    -1  // 设置较低的渲染顺序
-  );
-  lineBottom.position.z -= 0.2;
-
-  // 创建边框组
-  const borderGroup = new Group3D();
-  borderGroup.add(lineTop);
-  borderGroup.add(lineBottom);
-
-  // 添加到全局流光线数组中
-  addFlowingLine(lineTop);
-  addFlowingLine(lineBottom);
-  borderGroup.pickedEnable = false;
-  return borderGroup;
-};
-
-/**
- * 创建文字标签
- * @param properties 省份属性
- * @param province 省份对象，作为文字标签的父节点
- */
-const createTextLabel = (properties: any, province: BaseObject3D) => {
-  if (properties.centroid || properties.center) {
-    const point = properties.centroid || properties.center;
-    if (point && properties.name) {
-      // 计算适当的宽度，基于文本长度
-      const textLength = properties.name.length;
-      const radioScale = 0.2;
-      const calculatedWidth = textLength * radioScale;
-      // 确保最小宽度
-      const width = Math.max(calculatedWidth, radioScale);
-
-      // 创建文字标签
-      const textWidget = new Widget3D({
-        type: WIDGET.TEXT_2D,
-        width: width,
-        height: radioScale,
-        textParam: {
-          text: properties.name,
-          fontSize: 32,
-          color: '#ffffff'
-        }
-      });
-      textWidget.pickedEnable = false;
-      textWidget.init().then(widget => {
-        // 设置位置
-        widget.position.set(point[0] + radioScale, point[1] + radioScale, 0.5);
-        // 添加到省份节点
-        province.add(widget);
-        province.name = properties.name;
-      });
-    }
-  }
-};
-
-/**
- * 添加上升动画
- * @param object 要添加动画的对象
- */
-export const addRiseAnimation = (object: BaseObject3D) => {
-  // 如果已经在上升动画中，直接返回
-  if (elasticAnimations.has(object) && elasticAnimations.get(object)!.isAnimating) {
-    return;
-  }
-
-  // 记录初始位置
-  const initialY = object.position.y;
-  const targetY = initialY + 0.15; // 上升高度
-  
-  // 查找所有发光形状并设置发光效果
-  const glowingShapes = findGlowingShapes(object);
-  glowingShapes.forEach(shape => {
-    setGlowEffect(shape, true);
-  });
-  
-  // 添加新的动画
-  elasticAnimations.set(object, {
-    targetY,
-    velocity: 0,
-    damping: 0.1,  // 较小的阻尼，使上升缓慢
-    stiffness: 0.05, // 较小的弹性，使上升平滑
-    initialY,
-    isAnimating: true,
-    isRising: true
-  });
-};
-
-/**
- * 添加下落动画
- * @param object 要添加动画的对象
- */
-export const addFallAnimation = (object: BaseObject3D) => {
-  const animation = elasticAnimations.get(object);
-  if (!animation) return;
-
-  // 查找所有发光形状并恢复原始发光效果
-  const glowingShapes = findGlowingShapes(object);
-  glowingShapes.forEach(shape => {
-    setGlowEffect(shape, false);
-  });
-
-  // 设置下落动画
-  elasticAnimations.set(object, {
-    targetY: animation.initialY,
-    velocity: 0,
-    damping: 0.2,  // 较大的阻尼，使下落快速
-    stiffness: 0.05,
-    initialY: animation.initialY,
-    isAnimating: true,
-    isRising: false
-  });
-};
-
-/**
- * 创建省份对象
- * @param coordinates 省份坐标数据
- * @param properties 省份属性
- * @param topFaceMaterial 顶部材质
- * @param sideMaterial 侧面材质
- * @returns 创建的省份对象
- */
-const createProvince = (
-  coordinates: number[][][][],
-  properties: any,
-  topFaceMaterial: THREE.Material,
-  sideMaterial: THREE.Material
-): BaseObject3D => {
-  // 创建省份对象
-  const province = new BaseObject3D();
-  
-  // 循环坐标
-  coordinates.forEach((multiPolygon: number[][][]) => {
-    multiPolygon.forEach((polygon: number[][]) => {
-      const shape = new THREE.Shape();
-      // 绘制shape
-      for (let i = 0; i < polygon.length; i++) {
-        const [x, y] = polygon[i];
-        if (i === 0) {
-          shape.moveTo(x, y);
-        }
-        shape.lineTo(x, y);
+  /**
+   * 查找对象中的发光形状网格
+   * @param object 要查找的对象
+   * @returns 发光形状网格数组
+   */
+  private findGlowingShapes(object: BaseObject3D): MeshObject3D[] {
+    const glowingShapes: MeshObject3D[] = [];
+    object.traverse((child) => {
+      if (child instanceof MeshObject3D && child.userData.shape === 'glowingShape') {
+        glowingShapes.push(child);
       }
-      
-      // 拉伸设置
-      const extrudeSettings = {
-        depth: 0.2,
-        bevelEnabled: true,
-        bevelSegments: 1,
-        bevelThickness: 0.1,
-      };
-      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-      const mesh = new MeshObject3D(geometry, [topFaceMaterial, sideMaterial]);
-
-      // 更新网格的世界矩阵以确保包围盒计算正确
-      mesh.updateMatrixWorld(true);
-      
-      // 中心发光效果示例 - 从中心向外渐变
-      createGlowingShape(shape, {
-        parentObject: mesh,
-        glowColor: new THREE.Color(0x00aaff), // 青色发光
-        glowWidth: 0.5,    // 发光区域宽度较大，覆盖更多区域
-        glowIntensity: 0.6, // 发光强度适中
-        glowFalloff: 1.8,  // 较平缓的衰减，使过渡更平滑
-        glowType: 'center' // 中心发光效果
-      });
-      
-      province.add(mesh);
     });
-  });
+    return glowingShapes;
+  }
 
-  // 创建光柱
-  if (properties.centroid || properties.center) {
-    const point = properties.centroid || properties.center;
-    if (point) {
-      let heightScaleFactor = 1 + Math.random() * 1;
-      const light = createMapLightPillar(point[0], point[1], heightScaleFactor);
-      light.position.z = 0.31;
-      province.add(light);
-      // 添加到光柱管理数组
-      addLightPillar(light);
+  /**
+   * 设置发光效果参数
+   * @param shape 发光形状网格
+   * @param isRising 是否在上升状态
+   */
+  private setGlowEffect(shape: MeshObject3D, isRising: boolean): void {
+    const material = shape.material as THREE.ShaderMaterial;
+    if (isRising) {
+      material.uniforms.glowColor.value.set(0xffa500);
+      material.uniforms.glowWidth.value = 0.9;
+      material.uniforms.glowIntensity.value = 0.7;
+      material.uniforms.glowFalloff.value = 1.4;
+    } else {
+      material.uniforms.glowColor.value.set(0x00aaff);
+      material.uniforms.glowWidth.value = 0.6;
+      material.uniforms.glowIntensity.value = 0.7;
+      material.uniforms.glowFalloff.value = 1.6;
     }
   }
 
-  // 创建文字标签
-  createTextLabel(properties, province);
+  /**
+   * 添加上升动画
+   * @param object 要添加动画的对象
+   */
+  public addRiseAnimation(object: BaseObject3D): void {
+    if (this.elasticAnimations.has(object) && this.elasticAnimations.get(object)!.isAnimating) {
+      return;
+    }
 
-  // 设置省份类型
-  province.userData.type = 'province';
+    const initialY = object.position.y;
+    const targetY = initialY + 0.12;
 
-  // 添加鼠标事件
-  province.addEventListener('mouseenter', () => {
-    // 鼠标进入时向上弹起
-    addRiseAnimation(province);
-  });
+    const glowingShapes = this.findGlowingShapes(object);
+    glowingShapes.forEach(shape => {
+      this.setGlowEffect(shape, true);
+    });
 
-  province.addEventListener('mouseleave', () => {
-    // 鼠标离开时恢复原状
-    addFallAnimation(province);
-  });
+    this.elasticAnimations.set(object, {
+      targetY,
+      velocity: 0,
+      damping: 0.15,
+      stiffness: 0.08,
+      initialY,
+      isAnimating: true,
+      isRising: true
+    });
+  }
 
-  return province;
-};
+  /**
+   * 添加下落动画
+   * @param object 要添加动画的对象
+   */
+  public addFallAnimation(object: BaseObject3D): void {
+    const animation = this.elasticAnimations.get(object);
+    if (!animation) return;
 
-/**
- * 初始化3D模型
- * @param param 初始化参数
- */
-const initModel = async (param: {
-  topFaceMaterial: THREE.Material,
-  sideMaterial: THREE.Material,
-  scene: THREE.Scene,
-}) => {
-  const { topFaceMaterial, sideMaterial, scene } = param;
-  console.log('CurrentMap3d: 开始初始化模型...');
-  const mapGroup = new Group3D();
-  // 创建包围盒用于跟踪所有地图几何体
-  const boundingBox = new THREE.Box3();
-  
-  provinceData.features.forEach((elem: Feature) => {
-    // 使用封装的函数创建省份
-    const province = createProvince(
-      elem.geometry.coordinates,
-      elem.properties,
-      topFaceMaterial,
-      sideMaterial
+    const glowingShapes = this.findGlowingShapes(object);
+    glowingShapes.forEach(shape => {
+      this.setGlowEffect(shape, false);
+    });
+
+    this.elasticAnimations.set(object, {
+      targetY: animation.initialY,
+      velocity: 0,
+      damping: 0.2,
+      stiffness: 0.08,
+      initialY: animation.initialY,
+      isAnimating: true,
+      isRising: false
+    });
+  }
+
+  /**
+   * 创建光柱动画
+   * @param group 光柱组
+   * @param scale 初始缩放值
+   */
+  private createLightPillarAnimation(group: THREE.Group, scale: number): void {
+    const lightHalo = group.children.find(child => child.name === 'createLightHalo') as THREE.Mesh;
+    if (!lightHalo) return;
+
+    const material = lightHalo.material as THREE.MeshBasicMaterial;
+
+    // 确保材质初始状态正确
+    material.opacity = 0;
+    material.transparent = true;
+    material.depthWrite = false;
+    lightHalo.scale.set(scale, scale, scale);
+
+    // 存储动画状态
+    this.lightPillarAnimations.set(group, {
+      scale,
+      currentScale: scale,
+      targetScale: scale * 1.2, // 减小缩放范围
+      opacity: 0,
+      targetOpacity: 1,
+      isExpanding: true,
+      startTime: Date.now(),
+      duration: 2500 // 增加动画持续时间使效果更平滑
+    });
+  }
+
+  /**
+   * 创建文字标签
+   * @param point 文字位置坐标
+   * @param province 省份对象
+   */
+  private createTextLabel(point: number[], province: BaseObject3D): void {
+    const textLength = province.userData.properties.name.length;
+    const calculatedWidth = textLength * this.textHeight.radioScale;
+    const textWidget = new Widget3D({
+      type: WIDGET.TEXT_2D,
+      width: calculatedWidth,
+      height: this.textHeight.radioScale,
+      textParam: {
+        text: province.userData.properties.name,
+        fontSize: 32,
+        color: '#ffffff'
+      }
+    });
+    textWidget.pickedEnable = false;
+    textWidget.init().then(widget => {
+      // 文字位置设置在板块顶部上方
+      widget.position.set(point[0], point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale );
+      province.add(widget);
+      province.name = province.userData.properties.name;
+      // 文字渲染队列拉满
+      widget.children[0].renderOrder = 1000;
+    });
+  }
+
+  /**
+   * 初始化事件监听
+   * 处理鼠标拾取省份的动画效果
+   */
+  private initEvent(): void {
+    let lastPickedProvince: BaseObject3D | null = null;
+
+    coreEvent.on('POINT_MOVE', () => {
+      const currentObject = this.core.selectionTool.getPickedObject() as BaseObject3D;
+
+      /**
+       * 递归查找省份对象
+       * @param obj 当前对象
+       * @returns 找到的省份对象，如果未找到则返回null
+       */
+      const findProvince = (obj: BaseObject3D | null): BaseObject3D | null => {
+        // 如果对象不存在或是场景，返回null
+        if (!obj || obj.type === 'Scene') {
+          return null;
+        }
+
+        // 如果当前对象是省份，直接返回
+        if (obj.userData.type === 'GeoGround') {
+          return obj;
+        }
+
+        // 如果对象有父节点，继续向上查找
+        if (obj.parent) {
+          return findProvince(obj.parent as BaseObject3D);
+        }
+
+        return null;
+      };
+
+      // 查找当前拾取的省份
+      const currentProvince = findProvince(currentObject);
+      // 如果当前拾取的不是省份
+      if (!currentProvince) {
+        // 如果上一次有拾取的省份，触发下落动画
+        if (lastPickedProvince) {
+          this.addFallAnimation(lastPickedProvince);
+          lastPickedProvince = null;
+        }
+        return;
+      }
+
+      // 如果当前拾取的是新的省份
+      if (currentProvince !== lastPickedProvince) {
+        // 如果上一次有拾取的省份，先触发下落动画
+        if (lastPickedProvince) {
+          this.addFallAnimation(lastPickedProvince);
+        }
+
+        // 记录新的省份并触发上升动画
+        lastPickedProvince = currentProvince;
+        this.addRiseAnimation(currentProvince);
+      }
+    });
+
+    coreEvent.on('CORE_OBJECT_SELECTED', (object: any) => {
+      if (object && object.userData.type === 'GeoGround') {
+        console.log('CORE_OBJECT_SELECTED', object);
+      }
+    });
+  }
+
+  /**
+   * 根据地理层级设置高度参数
+   */
+  private setHeightByLevel(): void {
+    switch (this.currentGeoLevel) {
+      case this.GEO_LEVEL.COUNTRY_PROVINCE:
+        this.geoHeight = {
+          depth: 2      // 省级深度最大
+        };
+        this.textHeight = {
+          radioScale: 1  // 省级文字最大
+        };
+        this.pillarHeight = {
+          scale: 4,
+          height: 2
+        };
+        break;
+      case this.GEO_LEVEL.PROVINCE_CITY:
+        this.geoHeight = {
+          depth: 0.2    // 市级深度中等
+        };
+        this.textHeight = {
+          radioScale: 0.3  // 市级文字中等
+        };
+        this.pillarHeight = {
+          scale: 1.5,
+          height: 0.4
+        };
+        break;
+      case this.GEO_LEVEL.CITY_DISTRICT:
+        this.geoHeight = {
+          depth: 0.1    // 区级深度最小
+        };
+        this.textHeight = {
+          radioScale: 0.04  // 区级文字最小
+        };
+        this.pillarHeight = {
+          scale: 0.2,
+          height: 0.1
+        };
+        break;
+    }
+  }
+
+  /**
+   * 创建省份对象
+   * @param coordinates 省份坐标数据
+   * @param properties 省份属性
+   * @param topFaceMaterial 顶部材质
+   * @param sideMaterial 侧面材质
+   * @returns 创建的省份对象
+   */
+  private createProvince(coordinates: number[][][][], properties: any, topFaceMaterial: THREE.Material, sideMaterial: THREE.Material): BaseObject3D {
+    const province = new BaseObject3D();
+    province.userData.properties = properties;
+    province.userData.type = 'GeoGround';
+
+    coordinates.forEach((multiPolygon: number[][][]) => {
+      multiPolygon.forEach((polygon: number[][]) => {
+        const shape = new THREE.Shape();
+        for (let i = 0; i < polygon.length; i++) {
+          const [x, y] = polygon[i];
+          if (i === 0) {
+            shape.moveTo(x, y);
+          }
+          shape.lineTo(x, y);
+        }
+
+        const extrudeSettings = {
+          depth: this.geoHeight.depth,
+          bevelEnabled: true,
+          bevelSegments: 1,
+          bevelThickness: 0.1,
+        };
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const mesh = new MeshObject3D(geometry, [topFaceMaterial, sideMaterial]);
+        mesh.updateMatrixWorld(true);
+
+        const glowingShape = createGlowingShape(shape, {
+          parentObject: mesh,
+          glowColor: new THREE.Color(0x00aaff),
+          glowWidth: 0.5,
+          glowIntensity: 0.6,
+          glowFalloff: 1.8,
+          glowType: 'center'
+        });
+        glowingShape.position.z = this.geoHeight.depth;
+        province.add(mesh);
+      });
+    });
+
+    if (properties.centroid || properties.center) {
+      const point = properties.centroid || properties.center;
+      if (point) {
+        this.createLightPillar(point, province);
+        this.createTextLabel(point, province);
+      }
+    }
+
+    return province;
+  }
+
+  /**
+   * 创建边框线
+   * @param provinceData 省份数据
+   * @param renderOrder 渲染顺序
+   * @returns 包含上下边框的组
+   */
+  private createBorderLines(provinceData: ProvinceData): Group3D {
+    const lineTop = useCountry().createCountryFlatLine(
+      provinceData,
+      {
+        lineColor: 0x00ffff,
+        lineOpacity: 0.2,
+        glowColor: 0x00aaff,
+        glowOpacity: 2.0,
+        glowSpeed: 1.0,
+        speedFactors: [1.8, 1.0, -1.2]
+      },
+      "LineLoop",
+      2
     );
-    
-    // 计算当前省份的包围盒并扩展总包围盒
-    boundingBox.expandByObject(province);
-    mapGroup.add(province);
-  });
-  
-  console.log('CurrentMap3d: 创建边框...');
-  // 创建边框线，设置较高的渲染顺序
-  const borderGroup = createBorderLines(provinceData, 100);
-  mapGroup.add(borderGroup);
+    lineTop.position.z += this.geoHeight.depth;
 
-  // 先进行旋转
-  mapGroup.rotation.x = THREE.MathUtils.degToRad(-90);
+    const lineBottom = useCountry().createCountryFlatLine(
+      provinceData,
+      {
+        lineColor: 0x61fbfd,
+        lineOpacity: 1,
+        glowColor: 0x00ffff,
+        glowOpacity: 1,
+        glowSpeed: 0,
+        speedFactors: [1.5, 0.7, -1.0]
+      },
+      "LineLoop",
+      -1
+    );
+    lineBottom.position.z -= this.geoHeight.depth ;
 
-  // 更新世界矩阵，确保旋转生效
-  mapGroup.updateMatrixWorld(true);
+    const borderGroup = new Group3D();
+    borderGroup.add(lineTop);
+    borderGroup.add(lineBottom);
 
-  // 旋转后重新计算包围盒
-  const rotatedBoundingBox = new THREE.Box3().setFromObject(mapGroup);
-  const center = rotatedBoundingBox.getCenter(new THREE.Vector3());
-
-  // 将mapGroup向相反方向偏移，使包围盒中心与原点对齐
-  mapGroup.position.set(-center.x, 0, -center.z);
-
-  // 将组添加到场景中
-  scene.add(mapGroup);
-
-  // 创建粒子效果
-  console.log('创建粒子效果...');
-  // 计算场景边界用于粒子位置
-  const mapBounds = new THREE.Box3().setFromObject(mapGroup);
-  const mapSize = mapBounds.getSize(new THREE.Vector3());
-  const mapCenter = mapBounds.getCenter(new THREE.Vector3());
-
-  // 使用封装的初始化粒子函数
-  particleArr = initParticles(scene, {
-    center: mapCenter,
-    size: mapSize
-  }, createSequenceFrame);
-
-  return mapGroup;
-};
-
-/**
- * 初始化场景
- * @param core 核心引擎实例
- * @returns 返回地图组对象
- */
-export const initScene = async (core: EnerV3DCore): Promise<Group3D> => {
-  // 获取场景实例
-  const scene = core.scene;
-
-  // // 1. 添加坐标轴辅助
-  // const axesHelper = new THREE.AxesHelper(10);
-  // scene.add(axesHelper);
-  
-  // 设置摄像机位置，朝向测试平面
-  core.camera.position.set(0, -30, 20);
-  core.camera.lookAt(0, 0, 20);
-  console.log('摄像机已指向测试平面位置');
-
-  const texture = core.loader.textureLoader
-  texture.setPath("/data/map/");
-  // const textureMap = texture.load("gz-map.jpg")
-  // const texturefxMap = texture.load("gz-map-fx.jpg")
-
-  // textureMap.wrapS = texturefxMap.wrapS = THREE.RepeatWrapping
-  // textureMap.wrapT = texturefxMap.wrapT = THREE.RepeatWrapping
-  // textureMap.flipY = texturefxMap.flipY = false
-  // textureMap.rotation = texturefxMap.rotation = THREE.MathUtils.degToRad(45)
-  // const scale = 0.128
-  // textureMap.repeat.set(scale, scale)
-  // texturefxMap.repeat.set(scale, scale)
-
-  const topFaceMaterial: THREE.Material = new THREE.MeshLambertMaterial({
-    color: 0x123024,
-    transparent: true,
-    opacity: 0, // todo
-  });
-
-  const sideMaterial = new THREE.MeshLambertMaterial({
-    color: 0x123024,
-    transparent: true,
-    opacity: 0.9, // todo
-  });
-
-  // 加载数据
-  const data = await loadMapData(core.loader)
-  console.log('地图数据加载完成，开始转换...');
-  if (!data) {
-    console.error("无法加载地图数据");
-    return new Group3D();
+    this.flowingLines.push(lineTop);
+    this.flowingLines.push(lineBottom);
+    borderGroup.pickedEnable = false;
+    return borderGroup;
   }
 
-  // 转换数据结构，统一格式
-  const convertedData = transformGeoJSON(data);
-  if (!convertedData) {
-    console.error("地图数据转换失败");
-    return new Group3D();
+  /**
+   * 加载场景地面
+   * 创建并添加旋转光圈、旋转点、背景和原点等效果
+   */
+  private async loadSceneGround(): Promise<void> {
+    const texture = this.core.loader.textureLoader;
+    texture.setPath("/data/map/");
+    const rotatingApertureTexture = texture.load("rotatingAperture.png");
+    const rotatingPointTexture = texture.load("rotating-point2.png");
+    const circlePoint = texture.load("circle-point.png");
+    const sceneBg = texture.load("scene-bg2.png");
+
+    const box = new THREE.Box3().setFromObject(this.mapGroup);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const width = Math.max(size.x, size.y);
+    const bottomZ = center.y - size.y;
+
+    const groundGroup = new THREE.Group();
+
+    const initRotatingAperture = (width: number): void => {
+      let plane = new THREE.PlaneGeometry(width, width);
+      let material = new THREE.MeshBasicMaterial({
+        map: rotatingApertureTexture,
+        transparent: true,
+        opacity: 1,
+        depthTest: true,
+      });
+      this.rotatingApertureMesh = new THREE.Mesh(plane, material);
+      this.rotatingApertureMesh.position.set(center.x, center.y, bottomZ - 0.1);
+      this.rotatingApertureMesh.scale.set(1.1, 1.1, 1.1);
+      groundGroup.add(this.rotatingApertureMesh);
+    };
+
+    const initRotatingPoint = (width: number): void => {
+      let plane = new THREE.PlaneGeometry(width, width);
+      let material = new THREE.MeshBasicMaterial({
+        map: rotatingPointTexture,
+        transparent: true,
+        opacity: 1,
+        depthTest: true,
+      });
+      this.rotatingPointMesh = new THREE.Mesh(plane, material);
+      this.rotatingPointMesh.position.set(center.x, center.y, bottomZ - 0.02);
+      this.rotatingPointMesh.scale.set(1.1, 1.1, 1.1);
+      groundGroup.add(this.rotatingPointMesh);
+    };
+
+    const initSceneBg = (width: number): void => {
+      let plane = new THREE.PlaneGeometry(width * 4, width * 4);
+      let material = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        map: sceneBg,
+        transparent: true,
+        opacity: 1,
+        depthTest: true,
+      });
+      let mesh = new THREE.Mesh(plane, material);
+      mesh.position.set(center.x, center.y, bottomZ - 0.2);
+      groundGroup.add(mesh);
+    };
+
+    const initCirclePoint = (width: number): void => {
+      let plane = new THREE.PlaneGeometry(width, width);
+      let material = new THREE.MeshPhongMaterial({
+        color: 0x00ffff,
+        map: circlePoint,
+        transparent: true,
+        opacity: 1,
+      });
+      let mesh = new THREE.Mesh(plane, material);
+      mesh.position.set(center.x, center.y, bottomZ - 0.1);
+      groundGroup.add(mesh);
+    };
+
+    initRotatingAperture(width * 1.4);
+    initRotatingPoint(width * 1.2);
+    // initSceneBg(width);
+    initCirclePoint(width);
+
+    groundGroup.rotation.x = THREE.MathUtils.degToRad(-90);
+    this.core.scene.add(groundGroup);
   }
 
-  // 使用类型断言确保TypeScript知道这是正确的类型
-  provinceData = convertedData as ProvinceData;
-  console.log('地图数据转换成功，包含省份数量:', provinceData.features?.length);
+  /**
+   * 动画更新函数
+   * 处理所有动画效果，包括弹性动画、旋转动画、流光效果等
+   */
+  private animate(): void {
+    if (!this.isInitialized) return;
 
-  if (!provinceData.features || !Array.isArray(provinceData.features)) {
-    console.error("地图数据格式不正确");
-    return new Group3D();
-  }
+    console.log('动画循环运行中，isInitialized:', this.isInitialized);
+    console.log('旋转网格状态:', {
+      rotatingApertureMesh: !!this.rotatingApertureMesh,
+      rotatingPointMesh: !!this.rotatingPointMesh
+    });
+    console.log('动画状态:', {
+      elasticAnimations: this.elasticAnimations.size,
+      lightPillarAnimations: this.lightPillarAnimations.size,
+      flowingLines: this.flowingLines.length,
+      particleArr: this.particleArr.length
+    });
 
-  // 准备创建地图
-  console.log("准备创建地图");
-  const mapGroup = await initModel({
-    topFaceMaterial,
-    sideMaterial,
-    scene,
-  });
-  loadSceneGround(core, mapGroup);
-  // 设置动画循环
-  function animate() {
-    requestAnimationFrame(animate);
+    requestAnimationFrame(() => this.animate());
 
-    // 获取时间，确保流光效果能随时间变化
-    const time = clock.getElapsedTime();
+    const time = this.clock.getElapsedTime();
+    const currentTime = Date.now();
 
     // 更新弹性动画
-    elasticAnimations.forEach((animation, object) => {
+    this.elasticAnimations.forEach((animation, object) => {
       const { targetY, velocity, damping, stiffness, initialY, isAnimating, isRising } = animation;
-      
-      // 计算弹性力
+
       const force = -stiffness * (object.position.y - targetY);
-      
-      // 更新速度（考虑阻尼）
       animation.velocity += force;
       animation.velocity *= (1 - damping);
-      
-      // 更新位置
       object.position.y += animation.velocity;
-      
-      // 如果动画已经稳定
+
       if (Math.abs(animation.velocity) < 0.001 && Math.abs(object.position.y - targetY) < 0.001) {
-        // 强制设置到目标位置
         object.position.y = targetY;
-        
-        // 如果是下落动画且到达目标位置，则完全移除动画
+
         if (!isRising && Math.abs(targetY - initialY) < 0.001) {
-          // 确保位置完全准确
           object.position.y = initialY;
-          elasticAnimations.delete(object);
+          this.elasticAnimations.delete(object);
         } else {
-          // 否则标记动画结束
           animation.isAnimating = false;
         }
       }
     });
 
     // 更新旋转动画
-    if (rotatingApertureMesh) {
-      rotatingApertureMesh.rotation.z += 0.0005; // 增加旋转速度
+    if (this.rotatingApertureMesh) {
+      this.rotatingApertureMesh.rotation.z += 0.0005;
     }
-    if (rotatingPointMesh) {
-      rotatingPointMesh.rotation.z -= 0.0005; // 增加旋转速度
+    if (this.rotatingPointMesh) {
+      this.rotatingPointMesh.rotation.z -= 0.0005;
     }
 
-    // 在每帧更新流光效果
-    updateFlowingLines();
+    // 更新流光效果
+    this.flowingLines.forEach(line => {
+      if (line && line.updateAnimation) {
+        line.updateAnimation(time);
+      }
+    });
 
-    // 更新粒子动画
-    updateParticles(particleArr, time);
+    // 更新粒子效果
+    updateParticles(this.particleArr, time);
 
-    // 更新光柱扩散效果
-    updateLightPillars();
+    // 更新光柱动画
+    this.lightPillars.forEach(light => {
+      if (!this.lightPillarAnimations.has(light)) {
+        const scale = 0.3 * this.pillarHeight.scale;
+        this.createLightPillarAnimation(light, scale);
+      }
+    });
 
-    // 更新TWEEN动画
-    TWEEN.update();
+    // 更新光柱动画状态
+    this.lightPillarAnimations.forEach((animation, group) => {
+      const lightHalo = group.children.find(child => child.name === 'createLightHalo') as THREE.Mesh;
+      if (!lightHalo) return;
+
+      const material = lightHalo.material as THREE.MeshBasicMaterial;
+      const elapsed = currentTime - animation.startTime;
+      const progress = Math.min(elapsed / animation.duration, 1);
+
+      if (animation.isExpanding) {
+        // 扩大阶段
+        const scale = animation.scale + (animation.targetScale - animation.scale) * progress;
+        const opacity = progress;
+
+        lightHalo.scale.set(scale, scale, scale);
+        material.opacity = opacity;
+
+        if (progress >= 1) {
+          // 切换到收缩阶段
+          animation.isExpanding = false;
+          animation.startTime = currentTime;
+          animation.targetScale = animation.scale * 1.4; // 减小缩放范围
+        }
+      } else {
+        // 收缩阶段
+        const scale = animation.targetScale - (animation.targetScale - animation.scale) * progress;
+        const opacity = 1 - progress;
+
+        lightHalo.scale.set(scale, scale, scale);
+        material.opacity = opacity;
+
+        if (progress >= 1) {
+          // 重新开始扩大阶段
+          animation.isExpanding = true;
+          animation.startTime = currentTime;
+          animation.targetScale = animation.scale * 1.2; // 减小缩放范围
+        }
+      }
+    });
   }
 
-  // 确保立即启动动画循环
-  animate();
+  /**
+   * 创建光柱效果
+   * @param point 光柱位置坐标
+   * @param heightScaleFactor 高度缩放因子
+   * @param province 省份对象
+   */
+  private createLightPillar(point: number[], province: BaseObject3D): void {
+    const light = useMapMarkedLightPillar({ scaleFactor: this.pillarHeight.scale }).createLightPillar(
+      point[0],
+      point[1],
+      this.pillarHeight.scale
+    );
+    light.name = `lightPillar_${province.userData.properties.name}`;
+    light.position.z += this.pillarHeight.height;
+    province.add(light);
+    this.lightPillars.push(light);
 
-  return mapGroup;
-};
-
-const loadSceneGround = async (core: EnerV3DCore, mapGroup: Group3D) => {
-  const texture = core.loader.textureLoader
-  texture.setPath("/data/map/");
-  const rotatingApertureTexture = texture.load("rotatingAperture.png")
-  const rotatingPointTexture = texture.load("rotating-point2.png")
-  const circlePoint = texture.load("circle-point.png")
-  const sceneBg = texture.load("scene-bg2.png")
-
-  // 获取mapGroup的包围盒
-  const box = new THREE.Box3().setFromObject(mapGroup);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const width = Math.max(size.x, size.y);
-  const bottomZ = 0;
-
-  // 创建一个group来包含所有mesh
-  const groundGroup = new THREE.Group();
-
-  // 初始化旋转光圈
-  const initRotatingAperture = (width: number) => {
-    let plane = new THREE.PlaneGeometry(width, width)
-    let material = new THREE.MeshBasicMaterial({
-      map: rotatingApertureTexture,
-      transparent: true,
-      opacity: 1,
-      depthTest: true,
-    })
-    rotatingApertureMesh = new THREE.Mesh(plane, material)
-    rotatingApertureMesh.position.set(center.x, center.y, bottomZ - 0.1)
-    rotatingApertureMesh.scale.set(1.1, 1.1, 1.1)
-    groundGroup.add(rotatingApertureMesh)
-    return rotatingApertureMesh
+    // 创建光柱动画
+    const scale = 0.3 * this.pillarHeight.scale;
+    this.createLightPillarAnimation(light, scale);
   }
 
-  // 初始化旋转点
-  const initRotatingPoint = (width: number) => {
-    let plane = new THREE.PlaneGeometry(width, width)
-    let material = new THREE.MeshBasicMaterial({
-      map: rotatingPointTexture,
-      transparent: true,
-      opacity: 1,
-      depthTest: true,
-    })
-    rotatingPointMesh = new THREE.Mesh(plane, material)
-    rotatingPointMesh.position.set(center.x, center.y, bottomZ - 0.02)
-    rotatingPointMesh.scale.set(1.1, 1.1, 1.1)
-    groundGroup.add(rotatingPointMesh)
-    return rotatingPointMesh
+  /**
+   * 根据地理层级设置高度参数
+   */
+  private determineGeoLevel(): void {
+    if (!this.provinceData || !this.provinceData.features || this.provinceData.features.length === 0) {
+      console.warn('无法确定地理层级：数据为空');
+      return;
+    }
+
+    // 获取第一个特征的level字段
+    const firstFeature = this.provinceData.features[0];
+    const level = firstFeature.properties?.level;
+
+    console.log('数据中的level字段：', level);
+
+    // 根据level字段判断层级
+    switch (level) {
+      case 'province':
+        this.currentGeoLevel = this.GEO_LEVEL.COUNTRY_PROVINCE;
+        console.log('当前地理层级：国家-省级关系');
+        break;
+      case 'city':
+        this.currentGeoLevel = this.GEO_LEVEL.PROVINCE_CITY;
+        console.log('当前地理层级：省-市级关系');
+        break;
+      case 'district':
+        this.currentGeoLevel = this.GEO_LEVEL.CITY_DISTRICT;
+        console.log('当前地理层级：市-区级关系');
+        break;
+      default:
+        console.warn('未知的level类型：', level);
+        // 默认设置为国家-省级关系
+        this.currentGeoLevel = this.GEO_LEVEL.COUNTRY_PROVINCE;
+        console.log('默认设置为国家-省级关系');
+    }
+
+    // 确定地理层级并设置高度参数
+    this.setHeightByLevel();
   }
 
-  // 初始化背景
-  const initSceneBg = (width: number) => {
-    let plane = new THREE.PlaneGeometry(width * 4, width * 4)
-    let material = new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      map: sceneBg,
-      transparent: true,
-      opacity: 1,
-      depthTest: true,
-    })
-    let mesh = new THREE.Mesh(plane, material)
-    mesh.position.set(center.x, center.y, bottomZ - 0.2)
-    groundGroup.add(mesh)
+  /**
+   * 初始化场景
+   * @param jsonPath 地图数据JSON文件路径
+   * @returns 地图组对象
+   */
+  public async init(jsonPath: string): Promise<Group3D> {
+    if (this.isInitialized) {
+      console.warn("GeoGround已经初始化过");
+      return this.mapGroup;
+    }
+
+    try {
+      // 创建坐标轴辅助工具
+      const axesHelper = new THREE.AxesHelper(5);
+      this.core.scene.add(axesHelper);
+
+      // 加载地图数据
+      const data = await this.core.loader.requestData(jsonPath);
+      if (!data) {
+        throw new Error("无法加载地图数据");
+      }
+
+      // 打印加载的JSON文件信息
+      console.log('加载的JSON文件：', jsonPath);
+      console.log('JSON数据特征数量：', data.features?.length || 0);
+
+      // 转换数据结构
+      const convertedData = transformGeoJSON(data);
+      if (!convertedData) {
+        throw new Error("地图数据转换失败");
+      }
+
+      this.provinceData = convertedData as ProvinceData;
+      
+      // 确定地理层级并设置高度参数
+      this.determineGeoLevel();
+      
+      // 打印转换后的数据信息
+      console.log('转换后的数据特征数量：', this.provinceData.features.length);
+      if (this.provinceData.features.length > 0) {
+        const firstFeature = this.provinceData.features[0];
+        console.log('第一个特征的属性：', firstFeature.properties);
+        console.log('第一个特征的坐标点数量：', 
+          firstFeature.geometry.coordinates[0][0].length
+        );
+      }
+
+      // 创建材质
+      const topFaceMaterial = new THREE.MeshLambertMaterial({
+        color: 0x123024,
+        transparent: true,
+        opacity: 0,
+      });
+
+      const sideMaterial = new THREE.MeshLambertMaterial({
+        color: 0x123024,
+        transparent: true,
+        opacity: 0.9,
+      });
+
+      // 创建省份/市/区
+      const boundingBox = new THREE.Box3();
+      this.provinceData.features.forEach((feature: any) => {
+        const province = this.createProvince(
+          feature.geometry.coordinates,
+          feature.properties,
+          topFaceMaterial,
+          sideMaterial
+        );
+        boundingBox.expandByObject(province);
+        this.mapGroup.add(province);
+      });
+
+      // 创建边框
+      const borderGroup = this.createBorderLines(this.provinceData);
+      this.mapGroup.add(borderGroup);
+
+      // 旋转地图
+      this.mapGroup.rotation.x = THREE.MathUtils.degToRad(-90);
+      this.mapGroup.updateMatrixWorld(true);
+
+      // 计算中心点并调整位置
+      const rotatedBoundingBox = new THREE.Box3().setFromObject(this.mapGroup);
+      const center = rotatedBoundingBox.getCenter(new THREE.Vector3());
+      this.mapGroup.position.set(-center.x, this.geoHeight.depth * 0.5, -center.z);
+      // 添加到场景
+      this.core.scene.add(this.mapGroup);
+
+      // 创建粒子效果
+      const mapBounds = new THREE.Box3().setFromObject(this.mapGroup);
+      const mapSize = mapBounds.getSize(new THREE.Vector3());
+      const mapCenter = mapBounds.getCenter(new THREE.Vector3());
+
+      const sequenceFrameAnimate = useSequenceFrameAnimate();
+      this.particleArr = initParticles(this.core.scene, {
+        center: mapCenter,
+        size: mapSize
+      }, sequenceFrameAnimate.createSequenceFrame);
+
+      // 加载场景地面
+      await this.loadSceneGround();
+
+      // 初始化事件监听
+      this.initEvent();
+
+      // 标记为已初始化
+      this.isInitialized = true;
+
+      // 启动动画
+      this.animate();
+
+      return this.mapGroup;
+    } catch (error) {
+      console.error("初始化GeoGround失败:", error);
+      return new Group3D();
+    }
   }
 
-  // 初始化原点
-  const initCirclePoint = (width: number) => {
-    let plane = new THREE.PlaneGeometry(width, width)
-    let material = new THREE.MeshPhongMaterial({
-      color: 0x00ffff,
-      map: circlePoint,
-      transparent: true,
-      opacity: 1,
-    })
-    let mesh = new THREE.Mesh(plane, material)
-    mesh.position.set(center.x, center.y, bottomZ - 0.1)
-    groundGroup.add(mesh)
+  /**
+   * 清理资源
+   * 停止动画并清理所有创建的对象
+   */
+  public dispose(): void {
+    if (!this.isInitialized) return;
+
+    // 停止所有光柱动画
+    this.lightPillarAnimations.clear();
+
+    // 停止动画
+    this.isInitialized = false;
+
+    // 清理场景
+    this.core.scene.remove(this.mapGroup);
+    this.mapGroup.clear();
+    this.flowingLines = [];
+    this.particleArr = [];
+    this.lightPillars = [];
+    this.elasticAnimations.clear();
+    this.rotatingApertureMesh = null;
+    this.rotatingPointMesh = null;
+    this.provinceData = null;
   }
-
-  // 创建所有特效
-  initRotatingAperture(width * 1.4);
-  initRotatingPoint(width * 1.2);
-  initSceneBg(width);
-  initCirclePoint(width);
-
-  // 旋转group并添加到场景
-  groundGroup.rotation.x = THREE.MathUtils.degToRad(-90);
-  core.scene.add(groundGroup);
 }
+
+export default GeoGround;
