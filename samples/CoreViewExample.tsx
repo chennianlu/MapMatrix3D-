@@ -34,10 +34,10 @@ const CoreViewExample: React.FC = () => {
       globalCore.camera.lookAt(0, 0, 0);
       // 初始化GeoGround  
       geoGround = new GeoGround(globalCore);
-
-// 宁德市 四川省 中华人民共和国 福建省  广东省
+ 
+// 宁德市 四川省 中华人民共和国 福建省  广东省  上海市  china
       // 初始化场景
-      geoGround.init("./data/map/宁德市.json").then((mapGroup) => {
+      geoGround.init("./data/map/china.json").then((mapGroup) => {
         if (globalCore) {
           const groups = mapGroup.children.filter((child) => child.userData.type === 'GeoGround');
           selectionTool.raycasterObjs = groups;

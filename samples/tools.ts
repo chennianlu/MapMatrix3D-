@@ -17,7 +17,7 @@ import type { EnerV3DCore } from '../src/APP';
 
 import { createGlowingShape } from './utils/glowingShape';
 import { initParticles, updateParticles, SequenceFrameMesh } from './utils/particleEffects';
-import { transformGeoJSON } from './utils/geoDataUtils';
+import { transformGeoJSON, GeoJSONData } from './utils/geoDataUtils';
 
 /**
  * 动画状态接口定义
@@ -32,26 +32,6 @@ interface AnimationState {
   isRising: boolean;
 }
 
-interface ProvinceProperties {
-  name: string;
-  centroid?: [number, number];
-  center?: [number, number];
-  level?: 'province' | 'city' | 'district';
-  adcode?: number;
-  childrenNum?: number;
-  parent?: { adcode: number };
-  subFeatureIndex?: number;
-  acroutes?: number[];
-}
-
-interface ProvinceFeature {
-  type: string;
-  properties: ProvinceProperties;
-  geometry: {
-    type: string;
-    coordinates: number[][][][];
-  };
-}
 
 /**
  * 3D地图场景管理类
@@ -398,7 +378,7 @@ class GeoGround {
     switch (this.currentGeoLevel) {
       case this.GEO_LEVEL.COUNTRY_PROVINCE:
         this.geoHeight = {
-          depth: 2      // 省级深度最大
+          depth: 1      // 省级深度最大
         };
         this.textHeight = {
           radioScale: 1  // 省级文字最大
@@ -422,14 +402,14 @@ class GeoGround {
         break;
       case this.GEO_LEVEL.CITY_DISTRICT:
         this.geoHeight = {
-          depth: 0.1    // 市级深度中等
+          depth: 0.2    // 市级深度中等
         };
         this.textHeight = {
-          radioScale: 0.08  // 市级文字中等
+          radioScale: 0.16  // 市级文字中等
         };
         this.pillarHeight = {
-          scale: 0.6,
-          height: 0.21
+          scale: 1.5,
+          height: 0.4
         };
         break;
     }
@@ -447,7 +427,6 @@ class GeoGround {
     const province = new BaseObject3D();
     province.userData.properties = properties;
     province.userData.type = 'GeoGround';
-
     coordinates.forEach((multiPolygon: number[][][]) => {
       multiPolygon.forEach((polygon: number[][]) => {
         const shape = new THREE.Shape();
@@ -484,20 +463,49 @@ class GeoGround {
 
     if (properties.centroid || properties.center) {
       const point = properties.centroid || properties.center;
-      //
-
       if (point) {
         if (province.userData.properties.name === '宁德市') {
-          this.createLightPillar(point, province,0xffa500,0xffa500, this.pillarHeight.scale); // 红色光柱，绿色光圈
+          this.createLightPillar(point, province, 0xffa500, 0xffa500, this.pillarHeight.scale);
         } else {
-          this.createLightPillar(point, province, null, null,this.pillarHeight.scale * 0.6);
+          this.createLightPillar(point, province, 0x00aaff, 0x00ffff, this.pillarHeight.scale * 0.6);
         }
         this.createTextLabel(point, province);
-
       }
     }
 
     return province;
+  }
+
+  /**
+   * 创建MultiLineString类型的几何体（如南海十段线）
+   * @param coordinates 线坐标数据
+   * @param properties 属性数据
+   * @returns 创建的线对象
+   */
+  private createMultiLineString(coordinates: number[][][][], properties: any): BaseObject3D {
+    const lineGroup = new BaseObject3D();
+    lineGroup.userData.properties = properties;
+    lineGroup.userData.type = 'GeoGround';
+
+    // 创建线的材质
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.8,
+      linewidth: 2
+    });
+
+    // 处理每条线
+    coordinates.forEach((lineGroupData: number[][][]) => {
+      lineGroupData.forEach((line: number[][]) => {
+        const points = line.map(point => new THREE.Vector3(point[0], point[1], 0));
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMesh = new THREE.Line(geometry, lineMaterial);
+        lineGroup.add(lineMesh);
+      });
+    });
+
+    return lineGroup;
   }
 
   /**
@@ -638,18 +646,6 @@ class GeoGround {
   private animate(): void {
     if (!this.isInitialized) return;
 
-    console.log('动画循环运行中，isInitialized:', this.isInitialized);
-    console.log('旋转网格状态:', {
-      rotatingApertureMesh: !!this.rotatingApertureMesh,
-      rotatingPointMesh: !!this.rotatingPointMesh
-    });
-    console.log('动画状态:', {
-      elasticAnimations: this.elasticAnimations.size,
-      lightPillarAnimations: this.lightPillarAnimations.size,
-      flowingLines: this.flowingLines.length,
-      particleArr: this.particleArr.length
-    });
-
     requestAnimationFrame(() => this.animate());
 
     const time = this.clock.getElapsedTime();
@@ -744,49 +740,16 @@ class GeoGround {
   }
 
   /**
-   * 创建光柱效果
-   * @param point 光柱位置坐标
-   * @param province 省份对象
-   * @param pillarColor 光柱颜色，默认为0x00aaff
-   * @param haloColor 光圈颜色，默认为0x00ffff
-   */
-  private createLightPillar(
-    point: number[], 
-    province: BaseObject3D,
-    pillarColor: number | null = 0x00aaff,
-    haloColor: number | null = 0x00ffff,
-    height: number
-  ): void {
-    const light = useMapMarkedLightPillar({ 
-      scaleFactor: height,
-      pillarColor,
-      haloColor
-    }).createLightPillar(
-      point[0],
-      point[1],
-      height
-    );
-    light.name = `lightPillar_${province.userData.properties.name}`;
-    light.position.z += this.pillarHeight.height;
-    province.add(light);
-    this.lightPillars.push(light);
-
-    // 创建光柱动画
-    const scale = 0.3 * this.pillarHeight.scale;
-    this.createLightPillarAnimation(light, scale);
-  }
-
-  /**
    * 根据地理层级设置高度参数
    */
-  private determineGeoLevel(): void {
-    if (!this.provinceData || !this.provinceData.features || this.provinceData.features.length === 0) {
+  private determineGeoLevel(data: GeoJSONData): void {
+    if (!data || !data.features || data.features.length === 0) {
       console.warn('无法确定地理层级：数据为空');
       return;
     }
 
     // 获取第一个特征的level字段
-    const firstFeature = this.provinceData.features[0];
+    const firstFeature = data.features[0];
     const level = firstFeature.properties?.level;
 
     console.log('数据中的level字段：', level);
@@ -817,6 +780,42 @@ class GeoGround {
   }
 
   /**
+   * 创建光柱效果
+   * @param point 光柱位置坐标
+   * @param province 省份对象
+   * @param pillarColor 光柱颜色，默认为0x00aaff
+   * @param haloColor 光圈颜色，默认为0x00ffff
+   */
+  private createLightPillar(
+    point: number[], 
+    province: BaseObject3D,
+    pillarColor: number = 0x00aaff,
+    haloColor: number = 0x00ffff,
+    height: number
+  ): void {
+    const light = useMapMarkedLightPillar({ 
+      scaleFactor: height,
+      pillarColor,
+      haloColor,
+      pointTextureUrl: './assets/texture/标注.png',
+      lightHaloTextureUrl: './assets/texture/标注光圈.png',
+      lightPillarUrl: './assets/texture/光柱.png'
+    }).createLightPillar(
+      point[0],
+      point[1],
+      height
+    );
+    light.name = `lightPillar_${province.userData.properties.name}`;
+    light.position.z += this.pillarHeight.height;
+    province.add(light);
+    this.lightPillars.push(light);
+
+    // 创建光柱动画
+    const scale = 0.3 * this.pillarHeight.scale;
+    this.createLightPillarAnimation(light, scale);
+  }
+
+  /**
    * 初始化场景
    * @param jsonPath 地图数据JSON文件路径
    * @returns 地图组对象
@@ -837,32 +836,17 @@ class GeoGround {
       if (!data) {
         throw new Error("无法加载地图数据");
       }
-
-      // 打印加载的JSON文件信息
-      console.log('加载的JSON文件：', jsonPath);
-      console.log('JSON数据特征数量：', data.features?.length || 0);
-
+      // 确定地理层级并设置高度参数
+      this.determineGeoLevel(data);
       // 转换数据结构
-      const convertedData = transformGeoJSON(data);
+      const scaleFactor = this.currentGeoLevel === this.GEO_LEVEL.CITY_DISTRICT ? 6 : 1;
+      const convertedData = transformGeoJSON(data, scaleFactor);
       if (!convertedData) {
         throw new Error("地图数据转换失败");
       }
 
       this.provinceData = convertedData as ProvinceData;
       
-      // 确定地理层级并设置高度参数
-      this.determineGeoLevel();
-      
-      // 打印转换后的数据信息
-      console.log('转换后的数据特征数量：', this.provinceData.features.length);
-      if (this.provinceData.features.length > 0) {
-        const firstFeature = this.provinceData.features[0];
-        console.log('第一个特征的属性：', firstFeature.properties);
-        console.log('第一个特征的坐标点数量：', 
-          firstFeature.geometry.coordinates[0][0].length
-        );
-      }
-
       // 创建材质
       const topFaceMaterial = new THREE.MeshLambertMaterial({
         color: 0x123024,
@@ -879,6 +863,7 @@ class GeoGround {
       // 创建省份/市/区
       const boundingBox = new THREE.Box3();
       this.provinceData.features.forEach((feature: any) => {
+      
         const province = this.createProvince(
           feature.geometry.coordinates,
           feature.properties,

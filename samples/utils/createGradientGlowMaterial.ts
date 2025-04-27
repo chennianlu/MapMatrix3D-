@@ -73,8 +73,6 @@ const createCheckerTexture = () => {
 
 // 从几何体提取顶点并转换到UV空间
 const extractVerticesFromGeometry = (geometry: THREE.BufferGeometry): THREE.Vector2[] => {
-  console.log('开始从几何体提取顶点...');
-  
   // 创建直接从Shape中提取顶点的函数
   const extractVerticesFromShape = (shape: THREE.Shape): THREE.Vector2[] => {
     const vertices: THREE.Vector2[] = [];
@@ -96,7 +94,6 @@ const extractVerticesFromGeometry = (geometry: THREE.BufferGeometry): THREE.Vect
   
   // 检查是否是ShapeGeometry
   if ((geometry as any)._shapeGeo) {
-    console.log('直接从ShapeGeometry提取顶点');
     const shapeGeo = (geometry as any)._shapeGeo;
     
     if (shapeGeo && shapeGeo.shapes) {
@@ -125,13 +122,11 @@ const extractVerticesFromGeometry = (geometry: THREE.BufferGeometry): THREE.Vect
         );
       });
       
-      console.log(`从Shape提取了${normalizedVerts.length}个顶点`);
       return normalizedVerts;
     }
   }
   
   // 如果不是ShapeGeometry或无法访问其Shape，用标准方法提取
-  console.log('使用标准方法从BufferGeometry提取顶点');
   
   // 获取顶点位置
   const positions = geometry.getAttribute('position');
@@ -242,7 +237,6 @@ const extractVerticesFromGeometry = (geometry: THREE.BufferGeometry): THREE.Vect
     return hullVertices;
   }
   
-  console.log(`提取了${edgeVertices.length}个边缘顶点`);
   return edgeVertices;
 };
 
@@ -606,10 +600,7 @@ export const createGradientGlowMaterial = (options: GradientGlowMaterialOptions 
         // 对顶点进行排序
         const sortedVerts = sortVerticesClockwise(verts);
         
-        // 记录顶点信息帮助调试
-        console.log(`顶点排序前: ${verts.length}个`);
-        console.log(`顶点排序后: ${sortedVerts.length}个`);
-        
+
         material.uniforms.vertices.value = sortedVerts;
         
         // 重新创建着色器以更新顶点数量
@@ -617,10 +608,7 @@ export const createGradientGlowMaterial = (options: GradientGlowMaterialOptions 
         material.fragmentShader = newShader.fragmentShader;
         material.vertexShader = newShader.vertexShader;
         material.needsUpdate = true;
-        
-        console.log(`内发光材质更新成功: ${sortedVerts.length} 个顶点`);
       } else {
-        console.warn('提取的顶点数量不足，无法创建内发光效果');
         // 设置一个默认的多边形作为备用
         const defaultVerts = [
           new THREE.Vector2(0.1, 0.1),
@@ -635,8 +623,6 @@ export const createGradientGlowMaterial = (options: GradientGlowMaterialOptions 
         material.fragmentShader = defaultShader.fragmentShader;
         material.vertexShader = defaultShader.vertexShader;
         material.needsUpdate = true;
-        
-        console.log('使用默认矩形作为发光形状');
       }
     } catch (error) {
       console.error('更新内发光材质时出错:', error);
