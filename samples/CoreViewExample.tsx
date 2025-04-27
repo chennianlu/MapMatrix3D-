@@ -32,12 +32,12 @@ const CoreViewExample: React.FC = () => {
       // 设置摄像机位置
       globalCore.camera.position.set(0, 30, 20);
       globalCore.camera.lookAt(0, 0, 0);
-      // 初始化GeoGround
+      // 初始化GeoGround  
       geoGround = new GeoGround(globalCore);
 
-// 宁德市 四川省 中华人民共和国
+// 宁德市 四川省 中华人民共和国 福建省  广东省
       // 初始化场景
-      geoGround.init("./data/map/四川省.json").then((mapGroup) => {
+      geoGround.init("./data/map/宁德市.json").then((mapGroup) => {
         if (globalCore) {
           const groups = mapGroup.children.filter((child) => child.userData.type === 'GeoGround');
           selectionTool.raycasterObjs = groups;

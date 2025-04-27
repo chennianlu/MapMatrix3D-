@@ -7,10 +7,12 @@ import { deepMerge, random } from '../../utils/index';
  * 光柱配置选项接口
  */
 interface MarkedLightPillarOptions {
-    pointTextureUrl?: string;
-    lightHaloTextureUrl?: string;
-    lightPillarUrl?: string;
-    scaleFactor?: number;
+    pointTextureUrl: string;
+    lightHaloTextureUrl: string;
+    lightPillarUrl: string;
+    scaleFactor: number;
+    pillarColor: number;  // 光柱颜色
+    haloColor: number;    // 光圈颜色
 }
 
 /**
@@ -38,11 +40,13 @@ interface MeshWithTween extends THREE.Mesh {
 export default function useMarkedLightPillar(options?: MarkedLightPillarOptions) {
     const { geoSphereCoord } = useCoord();
     // 默认参数
-    let defaultOptions = {
+    let defaultOptions: MarkedLightPillarOptions = {
         pointTextureUrl: './assets/texture/标注.png',
         lightHaloTextureUrl: './assets/texture/标注光圈.png',
         lightPillarUrl: './assets/texture/光柱.png',
         scaleFactor: 1, // 缩放系数
+        pillarColor: 0x00aaff, // 光柱颜色
+        haloColor: 0x00ffff,   // 光圈颜色
     };
     defaultOptions = deepMerge(defaultOptions, options || {});
     // 纹理加载器
@@ -57,7 +61,7 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
         const geometry = new THREE.PlaneGeometry(1, 1);
         const material = new THREE.MeshBasicMaterial({
             map: textureLoader.load(defaultOptions.pointTextureUrl),
-            color: 0x00ffff,
+            color: defaultOptions.haloColor || 0x00ffff,
             side: THREE.DoubleSide,
             transparent: true,
             depthWrite: false, //禁止写入深度缓冲区数据
@@ -80,7 +84,7 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
         const geometry = new THREE.PlaneGeometry(1, 1);
         const material = new THREE.MeshBasicMaterial({
             map: textureLoader.load(defaultOptions.lightHaloTextureUrl),
-            color: 0x00ffff,
+            color: defaultOptions.haloColor || 0x00ffff,
             side: THREE.DoubleSide,
             opacity: 0,
             transparent: true,
@@ -115,7 +119,7 @@ export default function useMarkedLightPillar(options?: MarkedLightPillarOptions)
         // 柱子材质
         const material = new THREE.MeshBasicMaterial({
             map: textureLoader.load(defaultOptions.lightPillarUrl),
-            color: 0x00ffff,
+            color: defaultOptions.pillarColor || 0x00ffff,
             transparent: true,
             depthWrite: false,
             side: THREE.DoubleSide,

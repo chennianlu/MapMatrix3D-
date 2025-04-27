@@ -317,7 +317,7 @@ class GeoGround {
     textWidget.pickedEnable = false;
     textWidget.init().then(widget => {
       // 文字位置设置在板块顶部上方
-      widget.position.set(point[0], point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale );
+      widget.position.set(point[0] + this.textHeight.radioScale * 1.5, point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale*1.5 );
       province.add(widget);
       province.name = province.userData.properties.name;
       // 文字渲染队列拉满
@@ -404,8 +404,8 @@ class GeoGround {
           radioScale: 1  // 省级文字最大
         };
         this.pillarHeight = {
-          scale: 4,
-          height: 2
+          scale: 7,
+          height: 2.8
         };
         break;
       case this.GEO_LEVEL.PROVINCE_CITY:
@@ -413,7 +413,7 @@ class GeoGround {
           depth: 0.2    // 市级深度中等
         };
         this.textHeight = {
-          radioScale: 0.3  // 市级文字中等
+          radioScale: 0.16  // 市级文字中等
         };
         this.pillarHeight = {
           scale: 1.5,
@@ -422,14 +422,14 @@ class GeoGround {
         break;
       case this.GEO_LEVEL.CITY_DISTRICT:
         this.geoHeight = {
-          depth: 0.1    // 区级深度最小
+          depth: 0.1    // 市级深度中等
         };
         this.textHeight = {
-          radioScale: 0.04  // 区级文字最小
+          radioScale: 0.08  // 市级文字中等
         };
         this.pillarHeight = {
-          scale: 0.2,
-          height: 0.1
+          scale: 0.6,
+          height: 0.21
         };
         break;
     }
@@ -484,9 +484,16 @@ class GeoGround {
 
     if (properties.centroid || properties.center) {
       const point = properties.centroid || properties.center;
+      //
+
       if (point) {
-        this.createLightPillar(point, province);
+        if (province.userData.properties.name === '宁德市') {
+          this.createLightPillar(point, province,0xffa500,0xffa500, this.pillarHeight.scale); // 红色光柱，绿色光圈
+        } else {
+          this.createLightPillar(point, province, null, null,this.pillarHeight.scale * 0.6);
+        }
         this.createTextLabel(point, province);
+
       }
     }
 
@@ -528,7 +535,7 @@ class GeoGround {
       "LineLoop",
       -1
     );
-    lineBottom.position.z -= this.geoHeight.depth ;
+    lineBottom.position.z -= this.geoHeight.depth;
 
     const borderGroup = new Group3D();
     borderGroup.add(lineTop);
@@ -556,7 +563,7 @@ class GeoGround {
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const width = Math.max(size.x, size.y);
-    const bottomZ = center.y - size.y;
+    const bottomZ = -0.2;
 
     const groundGroup = new THREE.Group();
 
@@ -569,7 +576,7 @@ class GeoGround {
         depthTest: true,
       });
       this.rotatingApertureMesh = new THREE.Mesh(plane, material);
-      this.rotatingApertureMesh.position.set(center.x, center.y, bottomZ - 0.1);
+      this.rotatingApertureMesh.position.set(0, 0, bottomZ - 0.1);
       this.rotatingApertureMesh.scale.set(1.1, 1.1, 1.1);
       groundGroup.add(this.rotatingApertureMesh);
     };
@@ -583,7 +590,7 @@ class GeoGround {
         depthTest: true,
       });
       this.rotatingPointMesh = new THREE.Mesh(plane, material);
-      this.rotatingPointMesh.position.set(center.x, center.y, bottomZ - 0.02);
+      this.rotatingPointMesh.position.set(0, 0, bottomZ - 0.02);
       this.rotatingPointMesh.scale.set(1.1, 1.1, 1.1);
       groundGroup.add(this.rotatingPointMesh);
     };
@@ -739,14 +746,25 @@ class GeoGround {
   /**
    * 创建光柱效果
    * @param point 光柱位置坐标
-   * @param heightScaleFactor 高度缩放因子
    * @param province 省份对象
+   * @param pillarColor 光柱颜色，默认为0x00aaff
+   * @param haloColor 光圈颜色，默认为0x00ffff
    */
-  private createLightPillar(point: number[], province: BaseObject3D): void {
-    const light = useMapMarkedLightPillar({ scaleFactor: this.pillarHeight.scale }).createLightPillar(
+  private createLightPillar(
+    point: number[], 
+    province: BaseObject3D,
+    pillarColor: number | null = 0x00aaff,
+    haloColor: number | null = 0x00ffff,
+    height: number
+  ): void {
+    const light = useMapMarkedLightPillar({ 
+      scaleFactor: height,
+      pillarColor,
+      haloColor
+    }).createLightPillar(
       point[0],
       point[1],
-      this.pillarHeight.scale
+      height
     );
     light.name = `lightPillar_${province.userData.properties.name}`;
     light.position.z += this.pillarHeight.height;
@@ -811,8 +829,8 @@ class GeoGround {
 
     try {
       // 创建坐标轴辅助工具
-      const axesHelper = new THREE.AxesHelper(5);
-      this.core.scene.add(axesHelper);
+      // const axesHelper = new THREE.AxesHelper(5);
+      // this.core.scene.add(axesHelper);
 
       // 加载地图数据
       const data = await this.core.loader.requestData(jsonPath);
