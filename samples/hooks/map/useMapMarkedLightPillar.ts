@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import TWEEN from '@tweenjs/tween.js';
 import useCoord from '../useCoord';
 import { deepMerge, random } from '../../utils/index';
 
@@ -15,22 +14,6 @@ interface MarkedLightPillarOptions {
     haloColor: number;    // 光圈颜色
 }
 
-/**
- * 动画参数接口
- */
-interface TweenParams {
-    scale: number;
-    opacity: number;
-}
-
-/**
- * 带有动画属性的网格接口
- */
-interface MeshWithTween extends THREE.Mesh {
-    tween1?: any; // 使用any避免TWEEN类型问题
-    tween2?: any; // 使用any避免TWEEN类型问题
-    material: THREE.MeshBasicMaterial;
-}
 
 /**
  * 光柱标记生成Hook

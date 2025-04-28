@@ -27,46 +27,78 @@ export interface SequenceFrameMesh extends THREE.Mesh<THREE.PlaneGeometry, THREE
   maxLifecycle?: number; // 最大生命周期
   startY?: number; // 初始Y位置
   startX?: number; // 初始X位置
+  startZ?: number; // 初始Z位置
 }
 
 /**
  * 初始化粒子
- * @param scene THREE.Scene场景
+ * @param container THREE.Group粒子容器
  * @param bound 粒子生成区域的中心和大小
  * @param createSequenceFrame 创建序列帧的函数
  * @returns 初始化的粒子数组
  */
 export const initParticles = (
-  scene: THREE.Scene, 
+  container: THREE.Group, 
   bound: { center: THREE.Vector3, size: THREE.Vector3 },
   createSequenceFrame: (options: Partial<SequenceFrameOptions>) => SequenceFrameMesh
 ): SequenceFrameMesh[] => {
   // 获取中心点和中间地图大小
   let { center, size } = bound;
-  // 构建范围，中间地图的2倍
-  let minX = center.x - size.x;
-  let maxX = center.x + size.x;
-  let minY = center.y - size.y;
-  let maxY = center.y + size.y;
-  let minZ = -6;
-  let maxZ = 6;
+  
+  // 获取地图边界盒子的最大边长
+  const maxSize = Math.max(size.x, size.y, size.z);
+  
+  // 粒子密度控制参数
+  const DENSITY_FACTOR = 0.5; // 密度因子，控制粒子数量
+  const MIN_PARTICLES = 16;   // 最小粒子数量
+  const MAX_PARTICLES = 50;   // 最大粒子数量
+  
+  // 根据最大边长计算粒子数量
+  const baseParticleCount = MIN_PARTICLES;
+  const additionalParticles = Math.floor((maxSize / 50) * DENSITY_FACTOR);
+  const totalParticles = Math.min(baseParticleCount + additionalParticles, MAX_PARTICLES);
+
+  // 使用最大边长创建立方体空间
+  const cubeSize = maxSize;
+  const halfSize = cubeSize / 2;
+  
+  // 构建立方体空间范围
+  let minX = center.x - halfSize;
+  let maxX = center.x + halfSize;
+  let minY = center.y - halfSize;
+  let maxY = center.y + halfSize;
+  let minZ = center.z - halfSize;
+  let maxZ = center.z + halfSize;
+
+  // 粒子大小控制参数
+  const BASE_SIZE = 1; // 基础大小
+  const SIZE_FACTOR = 0.5; // 大小因子
+  const MAX_SIZE_FACTOR = 2; // 最大大小因子
+  
+  // 粒子速度控制参数
+  const BASE_SPEED = 0.002;
+  const SPEED_FACTOR = 0.5;  // 速度因子
+  const MAX_SPEED_FACTOR = 2; // 最大速度因子
 
   let particles: SequenceFrameMesh[] = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < totalParticles; i++) {
+    // 根据最大边长调整粒子大小
+    const sizeFactor = Math.min(maxSize / 100, MAX_SIZE_FACTOR);
+    const particleSize = BASE_SIZE * (1 + sizeFactor * SIZE_FACTOR);
+
     const particle = createSequenceFrame({
       image: "./data/map/上升粒子1.png",
-      width: 180,
-      height: 189,
+      width: particleSize,
+      height: particleSize,
       frame: 9,
       column: 9,
       row: 1,
       speed: 0.5,
     });
-    // 不参与射线检测
-    let particleScale = random(5, 10) / 1000;
-    particle.scale.set(particleScale, particleScale, particleScale);
+    
     particle.rotation.y = Math.PI / 2;
 
+    // 在立方体空间内随机生成位置
     let x = random(minX, maxX);
     let y = random(minY, maxY);
     let z = random(minZ, maxZ);
@@ -74,13 +106,24 @@ export const initParticles = (
     particle.position.set(x, y, z);
 
     // 添加粒子上升动画的属性
-    particle.speed = random(0.002, 0.01);  // 上升速度
-    particle.lifecycle = 0;  // 当前生命周期
-    particle.maxLifecycle = random(100, 200);  // 最大生命周期
-    particle.startY = y;  // 初始Y位置
-    particle.startX = x;  // 初始X位置
+    const speedFactor = Math.min(maxSize / 100, MAX_SPEED_FACTOR);
+    particle.speed = random(BASE_SPEED, BASE_SPEED * (1 + speedFactor * SPEED_FACTOR));
+    
+    // 优化生命周期，根据地图大小调整
+    const baseLifecycle = 100;
+    const maxLifecycle = 200;
+    const lifecycleFactor = Math.min(maxSize / 100, 2);
+    particle.lifecycle = 0;
+    particle.maxLifecycle = random(
+      baseLifecycle,
+      maxLifecycle * (1 + lifecycleFactor * 0.5)
+    );
+    
+    particle.startY = y;
+    particle.startX = x;
+    particle.startZ = z;
 
-    scene.add(particle);
+    container.add(particle);
     particles.push(particle);
   }
 
@@ -100,7 +143,7 @@ export const updateParticles = (particles: SequenceFrameMesh[], time: number): v
 
       // 更新粒子位置 - 沿Y轴上升
       if (particle.speed && particle.lifecycle !== undefined && particle.maxLifecycle !== undefined &&
-        particle.startY !== undefined && particle.startX !== undefined) {
+        particle.startY !== undefined && particle.startX !== undefined && particle.startZ !== undefined) {
 
         // 增加生命周期
         particle.lifecycle += 1;
@@ -112,6 +155,7 @@ export const updateParticles = (particles: SequenceFrameMesh[], time: number): v
         if (particle.lifecycle >= particle.maxLifecycle) {
           particle.position.y = particle.startY;
           particle.position.x = particle.startX;
+          particle.position.z = particle.startZ;
           particle.lifecycle = 0;
         }
       }

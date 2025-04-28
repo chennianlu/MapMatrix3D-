@@ -30,10 +30,12 @@ export interface PlayAnimationOption {
 class Animation {
   public playList: Map<string, (date?: any, delta?: number) => any>;
   clock: Clock;
+  private tweenGroup: TWEEN.Group;
 
   constructor() {
     this.playList = new Map();
     this.clock = new Clock();
+    this.tweenGroup = new TWEEN.Group();
     this._render();
   }
 
@@ -71,7 +73,7 @@ class Animation {
       completeCallback,
     } = options;
 
-    const tween = new TWEEN.Tween(startValue)
+    const tween = new TWEEN.Tween(startValue, this.tweenGroup)
       .to(endValue, time)
       .easing(animationType)
       .repeat(repeat)
@@ -89,17 +91,17 @@ class Animation {
 
   clear() {
     this.playList.clear();
+    this.tweenGroup.removeAll();
   }
 
   /**
    * 开启动画渲染
-   * @param time
    */
-  _render = (time?: number) => {
+  _render = () => {
     const delta = this.clock.getDelta();
 
-    TWEEN.update(time);
-    this.playList.forEach(cur => cur(time, delta));
+    this.tweenGroup.update();
+    this.playList.forEach(cur => cur(undefined, delta));
     requestAnimationFrame(this._render);
   };
 }

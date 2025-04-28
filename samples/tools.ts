@@ -6,7 +6,7 @@
  */
 import * as THREE from "three"
 import { ProvinceData } from './types';
-import { Group3D, BaseObject3D, coreEvent } from '../src/index';
+import { Group3D, BaseObject3D, coreEvent, cameraTool } from '../src/index';
 import { MeshObject3D } from '../src/objects/MeshObject3D';
 import useCountry from "./hooks/useCountry.ts"
 import useMapMarkedLightPillar from "./hooks/map/useMapMarkedLightPillar.ts"
@@ -61,22 +61,32 @@ class GeoGround {
   /**
    * 粒子效果数组，用于存储场景中的粒子效果
    */
-  private particleArr: SequenceFrameMesh[];
+  private particleArr: SequenceFrameMesh[] = [];
+
+  /**
+   * 粒子容器，用于存储粒子效果
+   */
+  private particleContainer: THREE.Group | null = null;
 
   /**
    * 光柱数组，用于存储每个省份的光柱效果
    */
-  private lightPillars: THREE.Group[];
+  private lightPillars: THREE.Group[] = [];
 
   /**
    * 旋转光圈网格，用于创建地面旋转效果
    */
-  private rotatingApertureMesh: THREE.Mesh | null;
+  private rotatingApertureMesh: THREE.Mesh | null = null;
 
   /**
    * 旋转点网格，用于创建地面旋转效果
    */
-  private rotatingPointMesh: THREE.Mesh | null;
+  private rotatingPointMesh: THREE.Mesh | null = null;
+
+  /**
+   * 地面组，包含所有地面效果
+   */
+  private groundGroup: THREE.Group | null = null;
 
   /**
    * 弹性动画映射表，用于存储每个省份的动画状态
@@ -87,6 +97,11 @@ class GeoGround {
    * 初始化标志，表示场景是否已经初始化
    */
   private isInitialized: boolean = false;
+
+  /**
+   * 动画帧ID，用于清理动画循环
+   */
+  private animationFrameId: number | null = null;
 
   /**
    * 光柱动画状态接口
@@ -151,10 +166,6 @@ class GeoGround {
     this.core = core;
     this.clock = new THREE.Clock();
     this.flowingLines = [];
-    this.particleArr = [];
-    this.lightPillars = [];
-    this.rotatingApertureMesh = null;
-    this.rotatingPointMesh = null;
     this.elasticAnimations = new Map();
     this.mapGroup = new Group3D();
   }
@@ -341,13 +352,15 @@ class GeoGround {
 
       // 查找当前拾取的省份
       const currentProvince = findProvince(currentObject);
-      // 如果当前拾取的不是省份
+      // 如果当前拾取的不是省份 
       if (!currentProvince) {
+        document.body.style.cursor = 'default';
         // 如果上一次有拾取的省份，触发下落动画
         if (lastPickedProvince) {
           this.addFallAnimation(lastPickedProvince);
           lastPickedProvince = null;
         }
+        
         return;
       }
 
@@ -361,6 +374,7 @@ class GeoGround {
         // 记录新的省份并触发上升动画
         lastPickedProvince = currentProvince;
         this.addRiseAnimation(currentProvince);
+        document.body.style.cursor = 'pointer';
       }
     });
 
@@ -385,7 +399,7 @@ class GeoGround {
         };
         this.pillarHeight = {
           scale: 7,
-          height: 2.8
+          height: 1.2
         };
         break;
       case this.GEO_LEVEL.PROVINCE_CITY:
@@ -475,39 +489,6 @@ class GeoGround {
 
     return province;
   }
-
-  /**
-   * 创建MultiLineString类型的几何体（如南海十段线）
-   * @param coordinates 线坐标数据
-   * @param properties 属性数据
-   * @returns 创建的线对象
-   */
-  private createMultiLineString(coordinates: number[][][][], properties: any): BaseObject3D {
-    const lineGroup = new BaseObject3D();
-    lineGroup.userData.properties = properties;
-    lineGroup.userData.type = 'GeoGround';
-
-    // 创建线的材质
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.8,
-      linewidth: 2
-    });
-
-    // 处理每条线
-    coordinates.forEach((lineGroupData: number[][][]) => {
-      lineGroupData.forEach((line: number[][]) => {
-        const points = line.map(point => new THREE.Vector3(point[0], point[1], 0));
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const lineMesh = new THREE.Line(geometry, lineMaterial);
-        lineGroup.add(lineMesh);
-      });
-    });
-
-    return lineGroup;
-  }
-
   /**
    * 创建边框线
    * @param provinceData 省份数据
@@ -571,9 +552,9 @@ class GeoGround {
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const width = Math.max(size.x, size.y);
-    const bottomZ = -0.2;
+    const bottomZ = -this.geoHeight.depth;
 
-    const groundGroup = new THREE.Group();
+    this.groundGroup = new THREE.Group();
 
     const initRotatingAperture = (width: number): void => {
       let plane = new THREE.PlaneGeometry(width, width);
@@ -586,7 +567,9 @@ class GeoGround {
       this.rotatingApertureMesh = new THREE.Mesh(plane, material);
       this.rotatingApertureMesh.position.set(0, 0, bottomZ - 0.1);
       this.rotatingApertureMesh.scale.set(1.1, 1.1, 1.1);
-      groundGroup.add(this.rotatingApertureMesh);
+      if (this.groundGroup) {
+        this.groundGroup.add(this.rotatingApertureMesh);
+      }
     };
 
     const initRotatingPoint = (width: number): void => {
@@ -600,7 +583,9 @@ class GeoGround {
       this.rotatingPointMesh = new THREE.Mesh(plane, material);
       this.rotatingPointMesh.position.set(0, 0, bottomZ - 0.02);
       this.rotatingPointMesh.scale.set(1.1, 1.1, 1.1);
-      groundGroup.add(this.rotatingPointMesh);
+      if (this.groundGroup) {
+        this.groundGroup.add(this.rotatingPointMesh);
+      }
     };
 
     const initSceneBg = (width: number): void => {
@@ -614,7 +599,9 @@ class GeoGround {
       });
       let mesh = new THREE.Mesh(plane, material);
       mesh.position.set(center.x, center.y, bottomZ - 0.2);
-      groundGroup.add(mesh);
+      if (this.groundGroup) {
+        this.groundGroup.add(mesh);
+      }
     };
 
     const initCirclePoint = (width: number): void => {
@@ -627,16 +614,21 @@ class GeoGround {
       });
       let mesh = new THREE.Mesh(plane, material);
       mesh.position.set(center.x, center.y, bottomZ - 0.1);
-      groundGroup.add(mesh);
+      if (this.groundGroup) {
+        this.groundGroup.add(mesh);
+      }
     };
 
+    // 初始化所有地面效果
     initRotatingAperture(width * 1.4);
     initRotatingPoint(width * 1.2);
-    // initSceneBg(width);
+    initSceneBg(width);
     initCirclePoint(width);
 
-    groundGroup.rotation.x = THREE.MathUtils.degToRad(-90);
-    this.core.scene.add(groundGroup);
+    if (this.groundGroup) {
+      this.groundGroup.rotation.x = THREE.MathUtils.degToRad(-90);
+      this.core.scene.add(this.groundGroup);
+    }
   }
 
   /**
@@ -646,7 +638,7 @@ class GeoGround {
   private animate(): void {
     if (!this.isInitialized) return;
 
-    requestAnimationFrame(() => this.animate());
+    this.animationFrameId = requestAnimationFrame(() => this.animate());
 
     const time = this.clock.getElapsedTime();
     const currentTime = Date.now();
@@ -889,17 +881,19 @@ class GeoGround {
       // 添加到场景
       this.core.scene.add(this.mapGroup);
 
-      // 创建粒子效果
+      // 创建粒子效果  上升粒子
       const mapBounds = new THREE.Box3().setFromObject(this.mapGroup);
+      // todo 重写
       const mapSize = mapBounds.getSize(new THREE.Vector3());
       const mapCenter = mapBounds.getCenter(new THREE.Vector3());
 
       const sequenceFrameAnimate = useSequenceFrameAnimate();
-      this.particleArr = initParticles(this.core.scene, {
-        center: mapCenter,
-        size: mapSize
-      }, sequenceFrameAnimate.createSequenceFrame);
-
+      this.particleContainer = new THREE.Group();
+      // this.particleArr = initParticles(this.particleContainer, {
+      //   center: mapCenter,
+      //   size: mapSize
+      // }, sequenceFrameAnimate.createSequenceFrame);
+      this.core.scene.add(this.particleContainer);
       // 加载场景地面
       await this.loadSceneGround();
 
@@ -926,6 +920,15 @@ class GeoGround {
   public dispose(): void {
     if (!this.isInitialized) return;
 
+    // 停止动画循环
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    // 停止时钟
+    this.clock.stop();
+
     // 停止所有光柱动画
     this.lightPillarAnimations.clear();
 
@@ -935,6 +938,21 @@ class GeoGround {
     // 清理场景
     this.core.scene.remove(this.mapGroup);
     this.mapGroup.clear();
+
+    // 清理地面组
+    if (this.groundGroup) {
+      this.core.scene.remove(this.groundGroup);
+      this.groundGroup.clear();
+      this.groundGroup = null;
+    }
+
+    // 清理粒子容器
+    if (this.particleContainer) {
+      this.core.scene.remove(this.particleContainer);
+      this.particleContainer.clear();
+      this.particleContainer = null;
+    }
+
     this.flowingLines = [];
     this.particleArr = [];
     this.lightPillars = [];
@@ -942,6 +960,14 @@ class GeoGround {
     this.rotatingApertureMesh = null;
     this.rotatingPointMesh = null;
     this.provinceData = null;
+
+    // 移除事件监听器
+    coreEvent.off('POINT_MOVE', () => {});
+    coreEvent.off('CORE_OBJECT_SELECTED', () => {});
+  }
+
+  public getParticleContainer(): THREE.Group | null {
+    return this.particleContainer;
   }
 }
 
