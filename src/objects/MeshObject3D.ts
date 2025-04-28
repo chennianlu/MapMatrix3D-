@@ -9,9 +9,23 @@ import {
   MeshBasicMaterial,
   Triangle,
   Material,
+  Raycaster,
+  Intersection,
+  BufferAttribute,
+  InterleavedBufferAttribute,
 } from 'three';
+import { ExMaterial } from '../types/material';
 
-import { BaseObject3D } from './BaseObject3D';
+// 使用 interface 而不是直接继承
+interface IBaseObject3D extends Object3D {
+  material: Material | Material[];
+  type: string;
+  copy(source: any, recursive?: boolean): any;
+  raycast(raycaster: any, intersects: any[]): void;
+}
+
+// 使用 ExMaterial 类型
+type TMaterial = ExMaterial;
 
 const _inverseMatrix = /*@__PURE__*/ new Matrix4();
 const _ray = /*@__PURE__*/ new Ray();
@@ -36,15 +50,13 @@ const _normalC = /*@__PURE__*/ new Vector3();
 const _intersectionPoint = /*@__PURE__*/ new Vector3();
 const _intersectionPointWorld = /*@__PURE__*/ new Vector3();
 
-type TMaterial = Material | Material[];
-
-class MeshObject3D extends BaseObject3D {
+class MeshObject3D extends Object3D implements IBaseObject3D {
   isMesh: boolean;
-  geometry: any;
-  declare material: any;
-  public override readonly type: string = 'MeshObject3D';
-  morphTargetInfluences: any;
-  morphTargetDictionary: any;
+  geometry: BufferGeometry;
+  declare material: TMaterial;
+  public readonly type: string = 'MeshObject3D';
+  morphTargetInfluences: number[] | undefined;
+  morphTargetDictionary: { [key: string]: number } | undefined;
 
   constructor(geometry = new BufferGeometry(), material: TMaterial = new MeshBasicMaterial()) {
     super();
@@ -57,7 +69,7 @@ class MeshObject3D extends BaseObject3D {
     this.updateMorphTargets();
   }
 
-  override copy(source, recursive) {
+  override copy(source: this, recursive = true): this {
     super.copy(source, recursive);
 
     if (source.morphTargetInfluences !== undefined) {
@@ -74,7 +86,7 @@ class MeshObject3D extends BaseObject3D {
     return this;
   }
 
-  updateMorphTargets() {
+  updateMorphTargets(): void {
     const geometry = this.geometry;
 
     const morphAttributes = geometry.morphAttributes;
@@ -97,7 +109,7 @@ class MeshObject3D extends BaseObject3D {
     }
   }
 
-  getVertexPosition(index, target) {
+  getVertexPosition(index: number, target: Vector3): Vector3 {
     const geometry = this.geometry;
     const position = geometry.attributes.position;
     const morphPosition = geometry.morphAttributes.position;
@@ -131,7 +143,7 @@ class MeshObject3D extends BaseObject3D {
     return target;
   }
 
-  override raycast(raycaster, intersects) {
+  override raycast(raycaster: Raycaster, intersects: Intersection[]): void {
     const geometry = this.geometry;
     const material = this.material;
     const matrixWorld = this.matrixWorld;
@@ -142,37 +154,39 @@ class MeshObject3D extends BaseObject3D {
 
     if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
 
-    _sphere.copy(geometry.boundingSphere);
-    _sphere.applyMatrix4(matrixWorld);
+    if (geometry.boundingSphere) {
+      _sphere.copy(geometry.boundingSphere);
+      _sphere.applyMatrix4(matrixWorld);
 
-    // check distance from ray origin to bounding sphere
+      // check distance from ray origin to bounding sphere
 
-    _ray.copy(raycaster.ray).recast(raycaster.near);
+      _ray.copy(raycaster.ray).recast(raycaster.near);
 
-    if (_sphere.containsPoint(_ray.origin) === false) {
-      if (_ray.intersectSphere(_sphere, _sphereHitAt) === null) return;
+      if (_sphere.containsPoint(_ray.origin) === false) {
+        if (_ray.intersectSphere(_sphere, _sphereHitAt) === null) return;
 
-      if (_ray.origin.distanceToSquared(_sphereHitAt) > (raycaster.far - raycaster.near) ** 2)
-        return;
+        if (_ray.origin.distanceToSquared(_sphereHitAt) > (raycaster.far - raycaster.near) ** 2)
+          return;
+      }
+
+      // convert ray to local space of mesh
+
+      _inverseMatrix.copy(matrixWorld).invert();
+      _ray.copy(raycaster.ray).applyMatrix4(_inverseMatrix);
+
+      // test with bounding box in local space
+
+      if (geometry.boundingBox !== null) {
+        if (_ray.intersectsBox(geometry.boundingBox) === false) return;
+      }
+
+      // test for intersections with geometry
+
+      this._computeIntersections(raycaster, intersects, _ray);
     }
-
-    // convert ray to local space of mesh
-
-    _inverseMatrix.copy(matrixWorld).invert();
-    _ray.copy(raycaster.ray).applyMatrix4(_inverseMatrix);
-
-    // test with bounding box in local space
-
-    if (geometry.boundingBox !== null) {
-      if (_ray.intersectsBox(geometry.boundingBox) === false) return;
-    }
-
-    // test for intersections with geometry
-
-    this._computeIntersections(raycaster, intersects, _ray);
   }
 
-  _computeIntersections(raycaster, intersects, rayLocalSpace) {
+  _computeIntersections(raycaster: Raycaster, intersects: Intersection[], rayLocalSpace: Ray): void {
     let intersection;
 
     const geometry = this.geometry;
@@ -192,7 +206,8 @@ class MeshObject3D extends BaseObject3D {
       if (Array.isArray(material)) {
         for (let i = 0, il = groups.length; i < il; i++) {
           const group = groups[i];
-          const groupMaterial = material[group.materialIndex];
+          const materialIndex = group.materialIndex ?? 0;
+          const groupMaterial = material[materialIndex];
 
           const start = Math.max(group.start, drawRange.start);
           const end = Math.min(
@@ -210,9 +225,9 @@ class MeshObject3D extends BaseObject3D {
               groupMaterial,
               raycaster,
               rayLocalSpace,
-              uv,
-              uv1,
-              normal,
+              uv as BufferAttribute,
+              uv1 as BufferAttribute,
+              normal as BufferAttribute,
               a,
               b,
               c
@@ -220,7 +235,9 @@ class MeshObject3D extends BaseObject3D {
 
             if (intersection) {
               intersection.faceIndex = Math.floor(j / 3); // triangle number in indexed buffer semantics
-              intersection.face.materialIndex = group.materialIndex;
+              if (intersection.face) {
+                intersection.face.materialIndex = materialIndex;
+              }
               intersects.push(intersection);
             }
           }
@@ -239,9 +256,9 @@ class MeshObject3D extends BaseObject3D {
             material,
             raycaster,
             rayLocalSpace,
-            uv,
-            uv1,
-            normal,
+            uv as BufferAttribute,
+            uv1 as BufferAttribute,
+            normal as BufferAttribute,
             a,
             b,
             c
@@ -259,7 +276,8 @@ class MeshObject3D extends BaseObject3D {
       if (Array.isArray(material)) {
         for (let i = 0, il = groups.length; i < il; i++) {
           const group = groups[i];
-          const groupMaterial = material[group.materialIndex];
+          const materialIndex = group.materialIndex ?? 0;
+          const groupMaterial = material[materialIndex];
 
           const start = Math.max(group.start, drawRange.start);
           const end = Math.min(
@@ -277,9 +295,9 @@ class MeshObject3D extends BaseObject3D {
               groupMaterial,
               raycaster,
               rayLocalSpace,
-              uv,
-              uv1,
-              normal,
+              uv as BufferAttribute,
+              uv1 as BufferAttribute,
+              normal as BufferAttribute,
               a,
               b,
               c
@@ -287,7 +305,9 @@ class MeshObject3D extends BaseObject3D {
 
             if (intersection) {
               intersection.faceIndex = Math.floor(j / 3); // triangle number in non-indexed buffer semantics
-              intersection.face.materialIndex = group.materialIndex;
+              if (intersection.face) {
+                intersection.face.materialIndex = materialIndex;
+              }
               intersects.push(intersection);
             }
           }
@@ -306,9 +326,9 @@ class MeshObject3D extends BaseObject3D {
             material,
             raycaster,
             rayLocalSpace,
-            uv,
-            uv1,
-            normal,
+            uv as BufferAttribute,
+            uv1 as BufferAttribute,
+            normal as BufferAttribute,
             a,
             b,
             c
@@ -324,7 +344,16 @@ class MeshObject3D extends BaseObject3D {
   }
 }
 
-function checkIntersection(object, material, raycaster, ray, pA, pB, pC, point) {
+function checkIntersection(
+  object: MeshObject3D,
+  material: Material,
+  raycaster: Raycaster,
+  ray: Ray,
+  pA: Vector3,
+  pB: Vector3,
+  pC: Vector3,
+  point: Vector3
+): Intersection | null {
   let intersect;
 
   if (material.side === 1) {
@@ -349,7 +378,18 @@ function checkIntersection(object, material, raycaster, ray, pA, pB, pC, point) 
   };
 }
 
-function checkGeometryIntersection(object, material, raycaster, ray, uv, uv1, normal, a, b, c) {
+function checkGeometryIntersection(
+  object: MeshObject3D,
+  material: Material,
+  raycaster: Raycaster,
+  ray: Ray,
+  uv: BufferAttribute | undefined,
+  uv1: BufferAttribute | undefined,
+  normal: BufferAttribute | undefined,
+  a: number,
+  b: number,
+  c: number
+): Intersection | null {
   object.getVertexPosition(a, _vA);
   object.getVertexPosition(b, _vB);
   object.getVertexPosition(c, _vC);

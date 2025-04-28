@@ -63,76 +63,55 @@ class Loader {
     return this._publicResourcePath;
   }
 
-  async loadOriginGLTF(uri: string, useCache: boolean = true) {
-    const modelBlob = useCache ? await this.browserCache.get<Blob>(uri) : null;
-    if (modelBlob) {
-      uri = URL.createObjectURL(modelBlob);
-    }
-    return new Promise<GLTF>((resolve, reject) => {
-      this.gltfLoader.load(
-        uri,
-        gltf => {
-          resolve(gltf);
-        },
-        progressEvent => {
-          //加载进度
-        },
-        errorEvent => {
-          console.warn('资源初始化失败：' + uri);
-          reject(false);
+  async loadOriginGLTF(uri: string, onProgress?: (progress: number) => void) {
+    try {
+      console.log('loader loadOriginGLTF start:', uri);
+      const gltf = await this.gltfLoader.loadAsync(uri, (event) => {
+        if (onProgress && event.total) {
+          const progress = (event.loaded / event.total) * 100;
+          onProgress(progress);
         }
-      );
-    });
+      });
+      if (!gltf) {
+        console.error('loader loadOriginGLTF: gltf is null');
+        throw new Error('GLTF 加载失败');
+      }
+      console.log('loader loadOriginGLTF completed:', uri);
+      return gltf;
+    } catch (error) {
+      console.error('loader loadOriginGLTF failed:', uri, error);
+      throw error;
+    }
   }
 
-  async loadGLTF(url: string, path?: string): Promise<THREE.Object3D> {
-    const _this = this;
-    const uri = (path ?? '') + url;
-    const cacheMesh = _this.modelCache.get(uri);
+  async loadGLTF(uri: string, onProgress?: (progress: number) => void) {
+    try {
+      console.log('loader loadGLTF start:', uri);
+      const gltf = await this.loadOriginGLTF(uri, onProgress);
+      if (!gltf || !gltf.scene) {
+        console.error('loader loadGLTF: gltf or scene is null');
+        return null;
+      }
 
-    const objHasMesh = (object: THREE.Object3D) => {
-      if (object instanceof THREE.Mesh) return true;
-      if (object instanceof THREE.Object3D) {
-        const children = object.children;
-        for (let i = 0; i < children.length; i++) {
-          if (children[i] instanceof THREE.Mesh) {
-            return true;
+      console.log('loader loadGLTF gltf loaded:', uri, gltf);
+      const model = gltf.scene;
+      model.traverse((node: any) => {
+        if (node.isMesh) {
+          node.castShadow = true;
+          node.receiveShadow = true;
+          if (node.material) {
+            node.material.transparent = true;
+            node.material.depthWrite = false;
           }
         }
-      }
-      return false;
-    };
+      });
 
-    return new Promise(function (resolve, reject) {
-      if (cacheMesh) {
-        //TODO  模型本身的材质怎么处理
-        resolve(cacheMesh.clone());
-      }
-      try {
-        _this.loadOriginGLTF(uri).then(gltf => {
-          let getNeedFlag = false;
-          let node: any = gltf.scene;
-          node.traverse(cur => {
-            const hasMesh = objHasMesh(cur);
-            if (getNeedFlag === false && hasMesh) {
-              getNeedFlag = true;
-              node = cur;
-            }
-            //开启深度检测
-            if (cur instanceof THREE.Mesh) {
-              cur.material.depthTest = true;
-              cur.material.depthWrite = true;
-            }
-          });
-          _this.modelCache.set(uri, node);
-
-          resolve(node);
-        });
-      } catch (error) {
-        console.warn('资源初始化失败：' + path + url);
-        reject(false);
-      }
-    });
+      console.log('loader loadGLTF completed:', uri);
+      return model;
+    } catch (error) {
+      console.error('loader loadGLTF failed:', uri, error);
+      throw error;
+    }
   }
 
   async loadTexture(url: string): Promise<THREE.Texture> {

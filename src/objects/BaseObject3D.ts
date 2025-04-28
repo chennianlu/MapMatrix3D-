@@ -4,6 +4,7 @@ import { loader } from '../tools/loader';
 import { renderTool } from '../tools/renderTool';
 import { LAYOUT_X, LAYOUT_Y, LAYOUT_Z } from '../constants';
 import { ObjectEventType } from '../managers/eventManager/core/defines';
+import { ExMaterial } from '../types/material';
 
 export type BaseInitOptions = {
   // parent?: BaseObject3D | THREE.Scene;
@@ -20,6 +21,7 @@ export type BaseInitOptions = {
     rule?: number[];
     offset?: number[];
   };
+  onProgress?: (progress: number) => void;
 };
 
 type LayoutCell = 1 | 2 | 3;
@@ -30,25 +32,21 @@ export interface Layout {
   offset?: [number, number, number];
 }
 
-interface ExMaterial extends THREE.MeshBasicMaterial {
-  uniforms?: any;
-  color: THREE.Color;
-}
 /**
  * @class BaseObject3D
  * @desc 3D物体基类
  * @date 2022-12-20
  */
 export class BaseObject3D extends THREE.Object3D {
-  public material: ExMaterial; // TODO 暂时不考虑多材质
+  public material: ExMaterial | ExMaterial[] = new THREE.MeshBasicMaterial(); // TODO 暂时不考虑多材质
   public override readonly type: string = 'Base';
   public url: string | undefined;
-  public aabb: null | AABB;
-  public loadStatus: boolean;
+  public aabb: null | AABB = null;
+  public loadStatus: boolean = false;
   public appKey: number | string | null; //用来绑定业务主键,默认用自身的uuid
-  private _listeners: any;
+  private _listeners: any = {};
   private _pickedEnable: boolean;
-  public _model: THREE.Object3D; //绑定模型节点
+  public _model: THREE.Object3D | null = null; //绑定模型节点
   public bloomStatus: boolean;
   public overrideColor: string | null;
   public overrideOpacity: number;
@@ -82,9 +80,45 @@ export class BaseObject3D extends THREE.Object3D {
   }
 
   public async init(options: BaseInitOptions) {
-    //初始化URL
-    if (options.url) await this.loadURL(options);
-    return this;
+    try {
+      const startTime = performance.now();
+      console.log(`[${this.id}] 开始初始化`);
+      
+      // 设置基本属性
+      if (options.name) this.name = options.name;
+      if (options.pickedEnable !== undefined) this.pickedEnable = options.pickedEnable;
+      if (options.bloom !== undefined) this.bloomStatus = options.bloom;
+      
+      // 设置父节点
+      if (options.parent) {
+        console.log(`[${this.id}] 设置父节点: ${options.parent.id}`);
+        options.parent.add(this);
+      }
+      
+      // 设置位置、缩放和旋转
+      if (options.position) this.setPosition(options.position);
+      if (options.scale) this.setScale(options.scale);
+      if (options.angle) {
+        const euler = new THREE.Euler(
+          THREE.MathUtils.degToRad(options.angle[0]),
+          THREE.MathUtils.degToRad(options.angle[1]),
+          THREE.MathUtils.degToRad(options.angle[2])
+        );
+        this.rotation.copy(euler);
+      }
+      
+      // 加载模型
+      if (options.url) {
+        await this.loadURL(options);
+      }
+      
+      const endTime = performance.now();
+      console.log(`[${this.id}] 初始化完成，耗时: ${(endTime - startTime).toFixed(2)}ms`);
+      return this;
+    } catch (error) {
+      console.error(`[${this.id}] 初始化失败:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -92,27 +126,29 @@ export class BaseObject3D extends THREE.Object3D {
    * @param url
    */
   async loadURL(params: BaseInitOptions): Promise<any> {
-    const { url, path } = params;
-    return new Promise((resolve, reject) => {
-      loader
-        .loadGLTF(url, path)
-        .then(model => {
-          this.position.copy(model.position);
-          // 挂在模型到自身node下面
-          this.attach(model as THREE.Group);
-          this._model = model;
-        })
-        .catch(error => {
-          // 加载失败  dosomething
-          console.log('模型加载失败' + path + url);
-          reject();
-        })
-        .finally(() => {
-          //初始化结束
-          this.loadStatus = true;
-          resolve(true);
-        });
-    });
+    const { url, path, onProgress } = params;
+    if (!url) {
+      throw new Error('URL is required');
+    }
+
+    try {
+      const fullPath = path ? path + url : url;
+      console.log(`[${this.id}] 开始加载模型: ${fullPath}`);
+      const model = await loader.loadGLTF(fullPath, onProgress);
+      if (!model) {
+        throw new Error('模型加载失败');
+      }
+
+      this.position.copy(model.position);
+      this.attach(model as THREE.Group);
+      this._model = model;
+      this.loadStatus = true;
+      return true;
+    } catch (error) {
+      console.error(`[${this.id}] 模型加载失败:`, error);
+      this.loadStatus = false;
+      throw error;
+    }
   }
 
   /**
@@ -232,7 +268,9 @@ export class BaseObject3D extends THREE.Object3D {
     if (offset && typeof offset[2] === 'number') resPos[2] += offset[2];
     const v3 = new THREE.Vector3(...resPos);
     //转化为相对父节点的坐标
-    this.parent.worldToLocal(v3);
+    if (this.parent) {
+      this.parent.worldToLocal(v3);
+    }
     return v3.toArray() as number[];
   }
 
@@ -369,10 +407,10 @@ export class BaseObject3D extends THREE.Object3D {
    */
   public getSelfAABB() {
     const calNode = this._model;
-    // const tmpRotation = this.rotation.clone();
-    // this.rotation.fromArray([0, 0, 0, 'XYZ']);
-    const box3 = new THREE.Box3().setFromObject(calNode); //新的包围盒逻辑
-    // this.rotation.copy(tmpRotation);
+    if (!calNode) {
+      return this._parseBoundingBox2AABB(new THREE.Box3());
+    }
+    const box3 = new THREE.Box3().setFromObject(calNode);
     return this._parseBoundingBox2AABB(box3);
   }
 
@@ -393,7 +431,7 @@ export class BaseObject3D extends THREE.Object3D {
    * 设置物体偏航角Y
    * @param degree
    */
-  yaw(degree) {
+  yaw(degree: number) {
     let radians = degree / 180;
     radians = radians * Math.PI;
     this.rotateY(radians);
@@ -403,7 +441,7 @@ export class BaseObject3D extends THREE.Object3D {
    * 设置物体俯仰角Z
    * @param degree
    */
-  pitch(degree) {
+  pitch(degree: number) {
     let radians = degree / 180;
     radians = radians * Math.PI;
     this.rotateZ(radians);
@@ -413,7 +451,7 @@ export class BaseObject3D extends THREE.Object3D {
    * 设置物体横滚角X
    * @param degree
    */
-  roll(degree) {
+  roll(degree: number) {
     let radians = degree / 180;
     radians = radians * Math.PI;
     this.rotateX(radians);
@@ -457,7 +495,7 @@ export class BaseObject3D extends THREE.Object3D {
    * 设置物体辉光
    * @param bool
    */
-  setBloomEffect(bool) {
+  setBloomEffect(bool: boolean) {
     if (bool) {
       this.traverse((cur: any) => {
         if (cur.type === 'Mesh' || cur.type === 'MeshObject3D') {
@@ -509,7 +547,7 @@ export class BaseObject3D extends THREE.Object3D {
    */
   once(eventType: ObjectEventType, func: Func): BaseObject3D {
     if (!isFunction(func)) return this;
-    const cb = ev => {
+    const cb = (ev: any) => {
       func(ev);
       this.off(eventType, cb);
     };
@@ -523,13 +561,13 @@ export class BaseObject3D extends THREE.Object3D {
    * @param {String} type event type, evnet name
    * @return {this} this
    */
-  emit(eventType: ObjectEventType, ...argument) {
+  emit(eventType: ObjectEventType, ...args: any[]) {
     if (!this._listeners || !this._listeners[eventType]) return this;
     const cbs = this._listeners[eventType] || [];
     const cache = cbs.slice(0);
 
     for (let i = 0; i < cache.length; i++) {
-      cache[i].apply(this, argument);
+      cache[i].apply(this, args);
     }
     return this;
   }
@@ -572,10 +610,21 @@ export class BaseObject3D extends THREE.Object3D {
     if (!resolveNode) return;
     resolveNode.traverse(cur => {
       if ((cur as BaseObject3D).material) {
-        if (color) {
-          (cur as BaseObject3D).material.color = new THREE.Color(color);
+        const material = (cur as BaseObject3D).material;
+        if (Array.isArray(material)) {
+          material.forEach(mat => {
+            if (color) {
+              mat.color = new THREE.Color(color);
+            } else {
+              mat.color = new THREE.Color();
+            }
+          });
         } else {
-          (cur as BaseObject3D).material.color = new THREE.Color();
+          if (color) {
+            material.color = new THREE.Color(color);
+          } else {
+            material.color = new THREE.Color();
+          }
         }
       }
     });
@@ -593,24 +642,40 @@ export class BaseObject3D extends THREE.Object3D {
     if (!resolveNode) return;
     resolveNode.traverse(cur => {
       if ((cur as BaseObject3D).material) {
-        const cloneMat = (cur as BaseObject3D).material.clone();
-        cloneMat.opacity = opacity;
-        if (opacity === 1) {
-          // (cur as BaseObject3D).material.transparent = false;
-          cloneMat.depthWrite = true;
+        const material = (cur as BaseObject3D).material;
+        if (Array.isArray(material)) {
+          material.forEach(mat => {
+            const cloneMat = mat.clone();
+            cloneMat.opacity = opacity;
+            if (opacity === 1) {
+              cloneMat.depthWrite = true;
+            } else {
+              cloneMat.transparent = true;
+              cloneMat.depthWrite = false;
+            }
+            if (cur.type === 'Sprite') {
+              cloneMat.depthWrite = false;
+            }
+            mat = cloneMat;
+            mat.needsUpdate = true;
+          });
         } else {
-          cloneMat.transparent = true;
-          cloneMat.depthWrite = false;
+          const cloneMat = material.clone();
+          cloneMat.opacity = opacity;
+          if (opacity === 1) {
+            cloneMat.depthWrite = true;
+          } else {
+            cloneMat.transparent = true;
+            cloneMat.depthWrite = false;
+          }
+          if (cur.type === 'Sprite') {
+            cloneMat.depthWrite = false;
+          }
+          (cur as BaseObject3D).material = cloneMat;
+          cloneMat.needsUpdate = true;
         }
-        //对于精灵深度检测始终关闭
-        if (cur.type === 'Sprite') {
-          cloneMat.depthWrite = false;
-        }
-        (cur as BaseObject3D).material = cloneMat;
-        cloneMat.needsUpdate = true;
       }
     });
-
     this.overrideOpacity = opacity;
   }
 
@@ -623,8 +688,16 @@ export class BaseObject3D extends THREE.Object3D {
   setWireframeVisible(isShow: boolean) {
     this.traverse(cur => {
       if ((cur as BaseObject3D).material) {
-        (cur as BaseObject3D).material.wireframe = isShow;
-        (cur as BaseObject3D).material.needsUpdate = true;
+        const material = (cur as BaseObject3D).material;
+        if (Array.isArray(material)) {
+          material.forEach(mat => {
+            mat.wireframe = isShow;
+            mat.needsUpdate = true;
+          });
+        } else {
+          material.wireframe = isShow;
+          material.needsUpdate = true;
+        }
       }
     });
   }
@@ -643,8 +716,15 @@ export class BaseObject3D extends THREE.Object3D {
 
     this.traverse(cur => {
       if ((cur as THREE.Mesh).geometry) {
-        info.triangles += (cur as THREE.Mesh).geometry.attributes.position?.count || 0;
-        info.vertices += (cur as THREE.Mesh).geometry.index?.count / 3 || 0;
+        const geometry = (cur as THREE.Mesh).geometry;
+        const position = geometry.attributes.position;
+        const index = geometry.index;
+        if (position) {
+          info.triangles += position.count || 0;
+        }
+        if (index) {
+          info.vertices += index.count / 3 || 0;
+        }
       }
     });
 
