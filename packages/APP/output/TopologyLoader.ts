@@ -351,7 +351,7 @@ export class TopologyLoader {
       portId: string;
     },
     target: {
-      nodeId: string;
+      nodeId: string;  
       portId: string;
     },
   ): null | any[] {
