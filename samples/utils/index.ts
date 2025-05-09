@@ -124,27 +124,7 @@ export const random = (min: number, max: number): number => {
 export function getStyle(el: HTMLElement, ruleName: string): string {
     return window.getComputedStyle(el)[ruleName as any];
 }
-
-// 重新导出其他工具函数文件中的函数
-export {
-    geoSphereCoord,
-    geoMercatorCoord,
-    getBoundingBox,
-    setMeshQuaternion
-} from './coordUtils';
-
 export {
     transformGeoJSON,
     transformGeoRoad
 } from './geoDataUtils';
-
-export {
-    createSequenceFrame
-} from './sequenceFrameUtils';
-
-export {
-    createCountryFlatLine
-} from './countryUtils';
-
-// 别名，兼容性支持
-export { geoSphereCoord as lon2xyz } from './coordUtils'; 

@@ -493,8 +493,9 @@ const createCenterGlowShader = (vertices: THREE.Vector2[]) => {
         // 计算归一化的距离
         float normalizedDist = calculateNormalizedDistance(vUv);
         
-        // 使用平滑的插值函数计算发光强度
-        float glowStrength = 1.0 - smoothInterpolation(normalizedDist);
+        // 使用平滑的插值函数计算发光强度，并应用宽度和衰减
+        float glowStrength = 1.0 - smoothInterpolation(clamp(normalizedDist / glowWidth, 0.0, 1.0));
+        glowStrength = pow(glowStrength, glowFalloff);  // 添加衰减效果
         
         // 应用发光强度
         glowStrength *= glowIntensity;

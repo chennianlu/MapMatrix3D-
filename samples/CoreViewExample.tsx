@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { EnerV3DCore, selectionTool, coreEvent } from '../src/index';
 import GeoGround from './tools';
 import './CoreViewExample.css'; // 添加样式文件
-import { mapConfig, getMapConfig } from './config';
+import { darkConfig, lightConfig, getMapConfig } from './config';
+import { GUIControl } from './utils/guiControl';
+import { EffectGround, GroundParams } from '../src/objects/EffectObject3D/EffectGround';
+import * as THREE from 'three';
 
 // 使用模块级变量，在组件渲染周期之外维持状态
 let globalCore: EnerV3DCore | null = null;
@@ -14,8 +17,8 @@ let mapHistory: string[] = []; // 使用数组作为历史记录栈
 const MAP_VIEW_CONFIG = {
   // 中国地图视角
   china: {
-    "position":[1.4327863356484303,77.13011599761127,27.336628954353568],
-    "target":[1.3106895574931972,-2.9202533634212418e-18,1.161552804276242],
+    "position": [1.4327863356484303, 77.13011599761127, 27.336628954353568],
+    "target": [1.3106895574931972, -2.9202533634212418e-18, 1.161552804276242],
     time: 2000
   },
   // 省份地图视角
@@ -38,6 +41,7 @@ const MAP_VIEW_CONFIG = {
   }
 } as const;
 
+
 // 定义地图类型
 type MapType = keyof typeof MAP_VIEW_CONFIG;
 
@@ -45,10 +49,11 @@ const CoreViewExample: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+
   // 调整相机视角
   const adjustCameraView = (mapType: MapType) => {
     if (!globalCore) return;
-    
+
     const config = MAP_VIEW_CONFIG[mapType];
     globalCore.cameraTool.flyWithCameraInfo({
       position: config.position,
@@ -61,11 +66,11 @@ const CoreViewExample: React.FC = () => {
   };
 
   // 加载地图数据
-  const loadMap = async (jsonPath: string, isBack: boolean = false) => {
+  const loadMap = async (jsonPath: string, isBack: boolean = false, config?: any) => {
     if (!globalCore) return;
-    
+
     setIsLoading(true);
-    
+
     // 清理之前的实例
     if (geoGround) {
       geoGround.dispose();
@@ -74,34 +79,53 @@ const CoreViewExample: React.FC = () => {
 
     // 创建新实例
     geoGround = new GeoGround(globalCore);
-    
+    const guiControl = new GUIControl(geoGround, config);
+
+    const customGround = new EffectGround({
+      radius: 200,                    // 设置半径为200
+      groundColor: config?.ground?.groundColor || '#ffffff',         // 设置地面颜色
+      markColor: config?.ground?.markColor || '#ffffff',           // 设置标记颜色
+      groundOpacity: config?.ground?.groundOpacity || 0.8,             // 设置地面透明度
+      animation: true,               // 关闭动画
+      markUrl: './assets/texture/光1.png',    // 设置标记贴图
+      groundUrl: './assets/texture/地板线01.png' // 设置地面贴图
+    });
+    globalCore.scene.add(customGround);
+    globalCore.sceneEffectTool.setBackground({
+      type: 'color',
+      color: config?.background?.backgroundColor || '#eeeeee'
+    });
+
     try {
-      const mapGroup = await geoGround.init(jsonPath);
+      const mapGroup = await geoGround.init(jsonPath, config);
       if (globalCore) {
         // 更新可点击对象
-        const groups = mapGroup.children.filter((child) => child.userData.type === 'GeoGround');
-        selectionTool.raycasterObjs = groups;
-        console.log('地图组初始化完成:', mapGroup);
-        
-        // 如果不是返回操作，则记录当前地图到历史记录
-        if (!isBack) {
-          mapHistory.push(jsonPath);
-          console.log('当前地图历史记录:', mapHistory);
-        }
+        globalCore.selectionTool.setPickableObjects([mapGroup]);
 
-        // 根据地图类型调整相机视角
-        if (jsonPath.includes('china.json')) {
-          adjustCameraView('china');
-        } else {
-          // 从mapConfig中查找对应的配置
-          const config = Object.values(mapConfig).find(config => config.url === jsonPath);
-          if (config) {
-            adjustCameraView(config.type);
-          }
-        }
+        // 计算边界框
+        const box = new THREE.Box3().setFromObject(mapGroup);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
 
-        // 重新设置选择工具
-        globalCore.selectionTool = selectionTool;
+        // 设置相机位置
+        const camera = globalCore.camera;
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        cameraZ *= 1.5; // 调整距离
+
+        // 设置相机位置和朝向
+        camera.position.set(center.x, center.y + cameraZ, center.z);
+        camera.lookAt(center);
+
+        // 更新控制器
+        const controls = globalCore.orbitControls;
+        controls.target.copy(center);
+        controls.update();
+
+        // 设置控制器限制
+        controls.maxDistance = cameraZ * 2;
+        controls.minDistance = cameraZ * 0.5;
       }
     } catch (error) {
       console.error('地图加载失败:', error);
@@ -124,7 +148,7 @@ const CoreViewExample: React.FC = () => {
         }
         globalCore = null;
       }
-   
+
       // 创建新实例
       globalCore = new EnerV3DCore(containerRef.current);
       //@ts-ignore
@@ -132,19 +156,19 @@ const CoreViewExample: React.FC = () => {
       // 设置摄像机位置
       globalCore.camera.position.set(0, 30, 20);
       globalCore.camera.lookAt(0, 0, 0);
-      
+
       // 监听点击事件
       coreEvent.on('CORE_OBJECT_SELECTED', (object: any) => {
         if (object) {
           if (object.userData.type === 'GeoGround') {
             console.log('CORE_OBJECT_SELECTED', object);
-            
+
             // 获取点击的板块名称
             const areaName = object.name;
-            
+
             // 从配置中获取对应的地图配置
             const mapConfig = getMapConfig(areaName);
-            
+
             if (mapConfig) {
               // 调用loadMap方法加载新地图
               loadMap(mapConfig.url);
@@ -163,8 +187,8 @@ const CoreViewExample: React.FC = () => {
         }
       });
 
-            // 加载中国地图
-      loadMap("./data/map/china.json");
+      loadMap("./data/map/china.json", false, darkConfig);
+
       // 标记为已初始化
       globalInitialized = true;
       console.log('3D核心初始化完成');
@@ -202,6 +226,7 @@ const CoreViewExample: React.FC = () => {
           <div style={{ color: 'white', fontSize: '16px' }}>地图加载中...</div>
         </div>
       )}
+
 
       <div
         ref={containerRef}

@@ -103,6 +103,41 @@ class SceneEffectTools {
       });
     }
   }
+
+  /**
+   * 设置场景雾化效果
+   * @param options 雾化参数
+   */
+  setFog(options: {
+    type: 'linear' | 'exponential' | 'exponential2';
+    color?: string | number;
+    near?: number;
+    far?: number;
+    density?: number;
+  }) {
+    const { type, color = '#ffffff', near = 1, far = 1000, density = 0.00025 } = options;
+
+    switch (type) {
+      case 'linear':
+        this._scene.fog = new THREE.Fog(color, near, far);
+        break;
+      case 'exponential':
+        this._scene.fog = new THREE.FogExp2(color, density);
+        break;
+      case 'exponential2':
+        this._scene.fog = new THREE.FogExp2(color, density);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * 清除场景雾化效果
+   */
+  clearFog() {
+    this._scene.fog = null;
+  }
 }
 
 export const sceneEffectTool = new SceneEffectTools();

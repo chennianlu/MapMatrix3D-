@@ -57,7 +57,7 @@ export class EffectGround extends MeshObject3D {
               value: lighTexture,
             },
             glowFactor: { value: 2.3 },
-            speed: { value: 0.0002 },
+            speed: { value: 0.2 },
             flowColor: { value: new THREE.Color(groundColor) },
           },
 
@@ -144,8 +144,10 @@ export class EffectGround extends MeshObject3D {
    */
   playRotation() {
     const _this = this;
+    let time = 0;
 
-    const animation = time => {
+    const animation = (_, delta: any) => {
+      time += delta;
       _this.material.uniforms.time.value = time;
     };
     animationManager.create('EffectGround_Animation' + this.uuid, animation);

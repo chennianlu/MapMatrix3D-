@@ -8,15 +8,13 @@ import * as THREE from "three"
 import { ProvinceData } from './types';
 import { Group3D, BaseObject3D, coreEvent, cameraTool } from '../src/index';
 import { MeshObject3D } from '../src/objects/MeshObject3D';
-import useCountry from "./hooks/useCountry.ts"
-import useMapMarkedLightPillar from "./hooks/map/useMapMarkedLightPillar.ts"
-import useSequenceFrameAnimate from "./hooks/useSequenceFrameAnimate"
+import {createCountryFlatLine} from "./utils/mapLineUtils.ts"
+import useMapMarkedLightPillar from "./utils/useMapMarkedLightPillar.ts"
 import { Widget3D } from '../src/objects/Widget3D';
 import { WIDGET } from '../src/constants';
 import type { EnerV3DCore } from '../src/APP';
 
-import { createGlowingShape } from './utils/glowingShape';
-import { initParticles, updateParticles, SequenceFrameMesh } from './utils/particleEffects';
+import { createGlowingShape } from './utils/glowingShape.ts';
 import { transformGeoJSON, GeoJSONData } from './utils/geoDataUtils';
 
 /**
@@ -37,7 +35,7 @@ interface AnimationState {
  * 3D地图场景管理类
  * 负责管理地图的创建、动画效果和交互
  */
-class GeoGround {
+export class GeoGround {
   /**
    * 3D核心引擎实例
    */
@@ -57,11 +55,6 @@ class GeoGround {
    * 流光线条数组，用于存储地图边界的光效
    */
   private flowingLines: any[];
-
-  /**
-   * 粒子效果数组，用于存储场景中的粒子效果
-   */
-  private particleArr: SequenceFrameMesh[] = [];
 
   /**
    * 粒子容器，用于存储粒子效果
@@ -191,7 +184,7 @@ class GeoGround {
    * @param isRising 是否在上升状态
    */
   private setGlowEffect(shape: MeshObject3D, isRising: boolean): void {
-    const material = shape.material as THREE.ShaderMaterial;
+    const material = shape.material as any;
     if (isRising) {
       material.uniforms.glowColor.value.set(0xffa500);
       material.uniforms.glowWidth.value = 0.9;
@@ -459,18 +452,18 @@ class GeoGround {
           bevelThickness: 0.1,
         };
         const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        const mesh = new MeshObject3D(geometry, [topFaceMaterial, sideMaterial]);
+        const mesh = new THREE.Mesh(geometry, [topFaceMaterial, sideMaterial]);
         mesh.updateMatrixWorld(true);
 
         const glowingShape = createGlowingShape(shape, {
           parentObject: mesh,
           glowColor: new THREE.Color(0x00aaff),
-          glowWidth: 0.5,
+          glowWidth: 1,
           glowIntensity: 0.6,
-          glowFalloff: 1.8,
+          glowFalloff: 1.6,
           glowType: 'center'
         });
-        glowingShape.position.z = this.geoHeight.depth;
+        glowingShape.position.z = -this.geoHeight.depth;
         province.add(mesh);
       });
     });
@@ -496,7 +489,7 @@ class GeoGround {
    * @returns 包含上下边框的组
    */
   private createBorderLines(provinceData: ProvinceData): Group3D {
-    const lineTop = useCountry().createCountryFlatLine(
+    const lineTop = createCountryFlatLine(
       provinceData,
       {
         lineColor: 0x00ffff,
@@ -509,9 +502,10 @@ class GeoGround {
       "LineLoop",
       2
     );
+    lineTop.name = 'topBorderLine';
     lineTop.position.z += this.geoHeight.depth;
 
-    const lineBottom = useCountry().createCountryFlatLine(
+    const lineBottom = createCountryFlatLine(
       provinceData,
       {
         lineColor: 0x61fbfd,
@@ -524,14 +518,18 @@ class GeoGround {
       "LineLoop",
       -1
     );
+    lineBottom.name = 'bottomBorderLine';
     lineBottom.position.z -= this.geoHeight.depth;
 
     const borderGroup = new Group3D();
     borderGroup.add(lineTop);
     borderGroup.add(lineBottom);
 
+    // 清空并重新添加线条
+    this.flowingLines = [];
     this.flowingLines.push(lineTop);
     this.flowingLines.push(lineBottom);
+    
     borderGroup.pickedEnable = false;
     return borderGroup;
   }
@@ -679,9 +677,6 @@ class GeoGround {
       }
     });
 
-    // 更新粒子效果
-    updateParticles(this.particleArr, time);
-
     // 更新光柱动画
     this.lightPillars.forEach(light => {
       if (!this.lightPillarAnimations.has(light)) {
@@ -808,20 +803,110 @@ class GeoGround {
   }
 
   /**
+   * 获取默认配置
+   */
+  public static getDefaultConfig() {
+    return {
+      background: {
+        backgroundColor: '#ffffff'
+      },
+      fog: {
+        enabled: false,
+        type: 'linear',
+        color: '#ffffff',
+        near: 1,
+        far: 100,
+        density: 0.1
+      },
+      ground: {
+        groundColor: '#ffffff',
+        markColor: '#ffffff',
+        groundOpacity: 0.8
+      },
+      material: {
+        topFaceColor: '#123024',
+        topFaceOpacity: 0,
+        sideFaceColor: '#123024',
+        sideFaceOpacity: 0.9
+      },
+      light: {
+        glowColor: '#00aaff',
+        glowWidth: 0.6,
+        glowIntensity: 0.7,
+        glowFalloff: 1.6,
+        showLightPillars: true
+      },
+      topLine: {
+        lineColor: '#00ffff',
+        lineOpacity: 0.2,
+        glowColor: '#00aaff',
+        glowOpacity: 2.0,
+        glowSpeed: 1.0,
+        speedFactor1: 1.8,
+        speedFactor2: 1.0,
+        speedFactor3: -1.2
+      },
+      bottomLine: {
+        lineColor: '#61fbfd',
+        lineOpacity: 1,
+        glowColor: '#00ffff',
+        glowOpacity: 1,
+        glowSpeed: 0,
+        speedFactor1: 1.5,
+        speedFactor2: 0.7,
+        speedFactor3: -1.0
+      }
+    };
+  }
+
+  /**
    * 初始化场景
    * @param jsonPath 地图数据JSON文件路径
+   * @param config 配置参数
    * @returns 地图组对象
    */
-  public async init(jsonPath: string): Promise<Group3D> {
+  public async init(jsonPath: string, config?: any): Promise<Group3D> {
     if (this.isInitialized) {
       console.warn("GeoGround已经初始化过");
       return this.mapGroup;
     }
 
     try {
-      // 创建坐标轴辅助工具
-      // const axesHelper = new THREE.AxesHelper(5);
-      // this.core.scene.add(axesHelper);
+      // 合并配置
+      const mergedConfig = {
+        ...GeoGround.getDefaultConfig(),
+        ...config
+      };
+
+      // 创建材质
+      const topMaterial = new THREE.MeshLambertMaterial({
+        color: mergedConfig.material.topFaceColor,
+        transparent: true,
+        opacity: mergedConfig.material.topFaceOpacity,
+      });
+
+      const sideMaterial = new THREE.MeshLambertMaterial({
+        color: mergedConfig.material.sideFaceColor,
+        transparent: true,
+        opacity: mergedConfig.material.sideFaceOpacity,
+      });
+
+      // 设置背景色
+      this.core.sceneEffectTool.setBackground({
+        type: 'color',
+        color: mergedConfig.background.backgroundColor
+      });
+
+      // 设置雾效
+      if (mergedConfig.fog.enabled) {
+        this.core.sceneEffectTool.setFog({
+          type: mergedConfig.fog.type,
+          color: mergedConfig.fog.color,
+          near: mergedConfig.fog.near,
+          far: mergedConfig.fog.far,
+          density: mergedConfig.fog.density
+        });
+      }
 
       // 加载地图数据
       const data = await this.core.loader.requestData(jsonPath);
@@ -839,27 +924,13 @@ class GeoGround {
 
       this.provinceData = convertedData as ProvinceData;
       
-      // 创建材质
-      const topFaceMaterial = new THREE.MeshLambertMaterial({
-        color: 0x123024,
-        transparent: true,
-        opacity: 0,
-      });
-
-      const sideMaterial = new THREE.MeshLambertMaterial({
-        color: 0x123024,
-        transparent: true,
-        opacity: 0.9,
-      });
-
       // 创建省份/市/区
       const boundingBox = new THREE.Box3();
       this.provinceData.features.forEach((feature: any) => {
-      
         const province = this.createProvince(
           feature.geometry.coordinates,
           feature.properties,
-          topFaceMaterial,
+          topMaterial,
           sideMaterial
         );
         boundingBox.expandByObject(province);
@@ -881,21 +952,8 @@ class GeoGround {
       // 添加到场景
       this.core.scene.add(this.mapGroup);
 
-      // 创建粒子效果  上升粒子
-      const mapBounds = new THREE.Box3().setFromObject(this.mapGroup);
-      // todo 重写
-      const mapSize = mapBounds.getSize(new THREE.Vector3());
-      const mapCenter = mapBounds.getCenter(new THREE.Vector3());
-
-      const sequenceFrameAnimate = useSequenceFrameAnimate();
-      this.particleContainer = new THREE.Group();
-      // this.particleArr = initParticles(this.particleContainer, {
-      //   center: mapCenter,
-      //   size: mapSize
-      // }, sequenceFrameAnimate.createSequenceFrame);
-      this.core.scene.add(this.particleContainer);
       // 加载场景地面
-      await this.loadSceneGround();
+      // await this.loadSceneGround();
 
       // 初始化事件监听
       this.initEvent();
@@ -905,6 +963,54 @@ class GeoGround {
 
       // 启动动画
       this.animate();
+
+      // 设置地面效果
+      this.updateGroundEffect({
+        groundColor: mergedConfig.ground.groundColor,
+        markColor: mergedConfig.ground.markColor,
+        groundOpacity: mergedConfig.ground.groundOpacity
+      });
+
+      // 设置光效
+      this.updateGlowEffect(
+        new THREE.Color(mergedConfig.light.glowColor),
+        mergedConfig.light.glowWidth,
+        mergedConfig.light.glowIntensity,
+        mergedConfig.light.glowFalloff
+      );
+
+      // 设置光柱显示状态
+      this.setLightPillarsVisible(mergedConfig.light.showLightPillars);
+
+      // 设置上边框效果
+      this.updateLineEffect(
+        new THREE.Color(mergedConfig.topLine.lineColor),
+        mergedConfig.topLine.lineOpacity,
+        new THREE.Color(mergedConfig.topLine.glowColor),
+        mergedConfig.topLine.glowOpacity,
+        mergedConfig.topLine.glowSpeed,
+        [
+          mergedConfig.topLine.speedFactor1,
+          mergedConfig.topLine.speedFactor2,
+          mergedConfig.topLine.speedFactor3
+        ],
+        true
+      );
+
+      // 设置下边框效果
+      this.updateLineEffect(
+        new THREE.Color(mergedConfig.bottomLine.lineColor),
+        mergedConfig.bottomLine.lineOpacity,
+        new THREE.Color(mergedConfig.bottomLine.glowColor),
+        mergedConfig.bottomLine.glowOpacity,
+        mergedConfig.bottomLine.glowSpeed,
+        [
+          mergedConfig.bottomLine.speedFactor1,
+          mergedConfig.bottomLine.speedFactor2,
+          mergedConfig.bottomLine.speedFactor3
+        ],
+        false
+      );
 
       return this.mapGroup;
     } catch (error) {
@@ -954,7 +1060,6 @@ class GeoGround {
     }
 
     this.flowingLines = [];
-    this.particleArr = [];
     this.lightPillars = [];
     this.elasticAnimations.clear();
     this.rotatingApertureMesh = null;
@@ -968,6 +1073,223 @@ class GeoGround {
 
   public getParticleContainer(): THREE.Group | null {
     return this.particleContainer;
+  }
+
+  /**
+   * 获取当前地理层级
+   */
+  public get geoLevel(): string {
+    return this.currentGeoLevel;
+  }
+
+  /**
+   * 设置当前地理层级
+   */
+  public set geoLevel(value: string) {
+    this.currentGeoLevel = value;
+    this.setHeightByLevel();
+  }
+
+  /**
+   * 获取初始化状态
+   */
+  public get initialized(): boolean {
+    return this.isInitialized;
+  }
+
+  /**
+   * 更新发光效果参数
+   * @param color 发光颜色
+   * @param width 发光宽度
+   * @param intensity 发光强度
+   * @param falloff 发光衰减
+   */
+  public updateGlowEffect(color: THREE.Color, width: number, intensity: number, falloff: number): void {
+    this.mapGroup.traverse((child) => {
+      if (child instanceof MeshObject3D && child.userData.shape === 'glowingShape') {
+        const material = child.material as any;
+        if (material.uniforms) {
+          material.uniforms.glowColor.value.copy(color);
+          material.uniforms.glowWidth.value = width;
+          material.uniforms.glowIntensity.value = intensity;
+          material.uniforms.glowFalloff.value = falloff;
+          material.needsUpdate = true;
+        }
+      }
+    });
+  }
+
+  /**
+   * 设置动画速度
+   * @param speed 动画速度因子
+   */
+  public setAnimationSpeed(speed: number): void {
+    // 这里可以添加设置动画速度的逻辑
+  }
+
+  /**
+   * 启用/禁用动画
+   * @param enabled 是否启用动画
+   */
+  public setAnimationEnabled(enabled: boolean): void {
+    // 这里可以添加控制动画启用/禁用的逻辑
+  }
+
+  /**
+   * 更新线条效果
+   * @param lineColor 线条颜色
+   * @param lineOpacity 线条透明度
+   * @param glowColor 发光颜色
+   * @param glowOpacity 发光透明度
+   * @param glowSpeed 发光速度
+   * @param speedFactors 速度因子数组
+   * @param isTop 是否为上边框
+   */
+  public updateLineEffect(
+    lineColor: THREE.Color,
+    lineOpacity: number,
+    glowColor: THREE.Color,
+    glowOpacity: number,
+    glowSpeed: number,
+    speedFactors: number[],
+    isTop: boolean
+  ): void {
+    console.log('Updating line effect:', { isTop, lineColor, lineOpacity, glowColor, glowOpacity, glowSpeed, speedFactors });
+    
+    // 根据 isTop 参数选择要更新的线条
+    const line = isTop ? this.flowingLines[0] : this.flowingLines[1];
+    if (!line) {
+      console.error('Line not found:', isTop ? 'top' : 'bottom');
+      return;
+    }
+
+    console.log('Found line:', line.name);
+    console.log('Line children:', line.children.map((child: THREE.Object3D) => child.name));
+
+    // 更新基础线条材质
+    line.traverse((child: THREE.Object3D) => {
+      if (child instanceof THREE.Line || child instanceof THREE.LineLoop || child instanceof THREE.LineSegments) {
+        if (child.name === 'countryBaseLine') {
+          if (child.material) {
+            const material = child.material as THREE.ShaderMaterial;
+            if (material.uniforms) {
+              console.log('Updating base line material:', material.uniforms);
+              material.uniforms.color.value = new THREE.Color(lineColor);
+              material.uniforms.opacity.value = lineOpacity;
+              material.needsUpdate = true;
+            }
+          }
+        } else if (child.name.startsWith('countrySpotLine')) {
+          if (child.material) {
+            const material = child.material as THREE.ShaderMaterial;
+            if (material.uniforms) {
+              const index = parseInt(child.name.replace('countrySpotLine', ''));
+              console.log('Updating spot line material:', material.uniforms, 'index:', index);
+              material.uniforms.color.value = new THREE.Color(glowColor);
+              material.uniforms.opacity.value = glowOpacity;
+              material.uniforms.speed.value = glowSpeed * (speedFactors[index] || 1);
+              material.needsUpdate = true;
+            }
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * 设置场景背景色
+   * @param color 背景颜色，支持十六进制颜色值
+   */
+  public setBackgroundColor(color: string): void {
+    this.core.sceneEffectTool.setBackground({
+      type: 'color',
+      color: color
+    });
+  }
+
+  /**
+   * 获取场景效果工具
+   */
+  public getSceneEffectTool() {
+    return this.core.sceneEffectTool;
+  }
+
+  /**
+   * 更新地面效果
+   * @param params 地面效果参数
+   */
+  public updateGroundEffect(params: { groundColor?: string; markColor?: string; groundOpacity?: number }): void {
+    this.mapGroup.traverse((child) => {
+      if (child instanceof MeshObject3D && child.userData.type === 'EffectGround') {
+        const material = child.material as unknown as THREE.ShaderMaterial;
+        if (material.uniforms) {
+          material.uniforms.color.value = new THREE.Color(params.markColor || '#000000');
+          material.uniforms.flowColor.value = new THREE.Color(params.groundColor || '#000000');
+          material.uniforms.alpha.value = params.groundOpacity || 1;
+          material.needsUpdate = true;
+        }
+      }
+    });
+  }
+
+  /**
+   * 设置光柱显示状态
+   * @param visible 是否显示光柱
+   */
+  public setLightPillarsVisible(visible: boolean): void {
+    this.lightPillars.forEach(light => {
+      light.visible = visible;
+    });
+  }
+
+  /**
+   * 获取光柱显示状态
+   */
+  public getLightPillarsVisible(): boolean {
+    return this.lightPillars.length > 0 ? this.lightPillars[0].visible : false;
+  }
+
+  /**
+   * 设置材质参数
+   * @param params 材质参数
+   */
+  public setMaterialParams(params: {
+    topFaceColor?: string;
+    topFaceOpacity?: number;
+    sideFaceColor?: string;
+    sideFaceOpacity?: number;
+  }): void {
+    this.mapGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const materials = child.material;
+        if (Array.isArray(materials)) {
+          // 更新顶部材质
+          const topMaterial = materials[0];
+          if (topMaterial instanceof THREE.MeshLambertMaterial) {
+            if (params.topFaceColor) {
+              topMaterial.color.set(params.topFaceColor);
+            }
+            if (params.topFaceOpacity !== undefined) {
+              topMaterial.opacity = params.topFaceOpacity;
+              topMaterial.transparent = params.topFaceOpacity < 1;
+            }
+            topMaterial.needsUpdate = true;
+          }
+          // 更新侧面材质
+          const sideMaterial = materials[1];
+          if (sideMaterial instanceof THREE.MeshLambertMaterial) {
+            if (params.sideFaceColor) {
+              sideMaterial.color.set(params.sideFaceColor);
+            }
+            if (params.sideFaceOpacity !== undefined) {
+              sideMaterial.opacity = params.sideFaceOpacity;
+              sideMaterial.transparent = params.sideFaceOpacity < 1;
+            }
+            sideMaterial.needsUpdate = true;
+          }
+        }
+      }
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import useCoord from '../useCoord';
-import { deepMerge, random } from '../../utils/index';
+import {geoSphereCoord} from './coordUtils';
+import { deepMerge, random } from './index';
 
 /**
  * 光柱配置选项接口
@@ -21,7 +21,6 @@ interface MarkedLightPillarOptions {
  * @returns 光柱相关方法
  */
 export default function useMarkedLightPillar(options?: MarkedLightPillarOptions) {
-    const { geoSphereCoord } = useCoord();
     // 默认参数
     let defaultOptions: MarkedLightPillarOptions = {
         pointTextureUrl: './assets/texture/标注.png',

@@ -19,6 +19,112 @@ export const mapConfig: Record<string, MapConfig> = {
   '上海市': { type: 'city', url: './data/map/上海市.json' },
 };
 
+// 示例配置
+export const darkConfig = {
+  "background": {
+    "backgroundColor": "#c5d3dd"
+  },
+  "fog": {
+    "enabled": true,
+    "type": "linear",
+    "color": "#ffffff",
+    "near": 1,
+    "far": 100,
+    "density": 0.1
+  },
+  "ground": {
+    "groundColor": "#ffffff",
+    "markColor": "#ffffff",
+    "groundOpacity": 0.8
+  },
+  "material": {
+    "topFaceColor": "#ffffff",
+    "topFaceOpacity": 0.2,
+    "sideFaceColor": "#ffffff",
+    "sideFaceOpacity": 0.9
+  },
+  "light": {
+    "glowColor": "#cedce3",
+    "glowWidth": 2,
+    "glowIntensity": 1,
+    "glowFalloff": 1.8,
+    "showLightPillars": false
+  },
+  "topLine": {
+    "lineColor": "#f7f8f8",
+    "lineOpacity": 0.2,
+    "glowColor": "#9ed8f5",
+    "glowOpacity": 2,
+    "glowSpeed": 1,
+    "speedFactor1": 1.8,
+    "speedFactor2": 1,
+    "speedFactor3": -1.2
+  },
+  "bottomLine": {
+    "lineColor": "#f7f7f7",
+    "lineOpacity": 1,
+    "glowColor": "#00ffff",
+    "glowOpacity": 1,
+    "glowSpeed": 0,
+    "speedFactor1": 1.5,
+    "speedFactor2": 0.7,
+    "speedFactor3": -1
+  }
+}
+
+// 示例配置
+export const lightConfig = {
+  "background": {
+    "backgroundColor": "#c5d3dd"
+  },
+  "fog": {
+    "enabled": true,
+    "type": "linear",
+    "color": "#ffffff",
+    "near": 1,
+    "far": 100,
+    "density": 0.1
+  },
+  "ground": {
+    "groundColor": "#ffffff",
+    "markColor": "#ffffff",
+    "groundOpacity": 0.8
+  },
+  "material": {
+    "topFaceColor": "#ffffff",
+    "topFaceOpacity": 0.2,
+    "sideFaceColor": "#ffffff",
+    "sideFaceOpacity": 0.9
+  },
+  "light": {
+    "glowColor": "#cedce3",
+    "glowWidth": 2,
+    "glowIntensity": 1,
+    "glowFalloff": 1.8,
+    "showLightPillars": false
+  },
+  "topLine": {
+    "lineColor": "#f7f8f8",
+    "lineOpacity": 0.2,
+    "glowColor": "#9ed8f5",
+    "glowOpacity": 2,
+    "glowSpeed": 1,
+    "speedFactor1": 1.8,
+    "speedFactor2": 1,
+    "speedFactor3": -1.2
+  },
+  "bottomLine": {
+    "lineColor": "#f7f7f7",
+    "lineOpacity": 1,
+    "glowColor": "#00ffff",
+    "glowOpacity": 1,
+    "glowSpeed": 0,
+    "speedFactor1": 1.5,
+    "speedFactor2": 0.7,
+    "speedFactor3": -1
+  }
+}
+
 /**
  * 获取地图配置
  * @param name 地区名称

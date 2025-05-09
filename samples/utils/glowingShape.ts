@@ -99,7 +99,7 @@ export const createGlowingShape = (shape: THREE.Shape, options: GlowingShapeOpti
   const shapeMesh = new MeshObject3D(geometry, glowMaterial);
   shapeMesh.userData.shape = 'glowingShape';
   // 设置渲染顺序
-  shapeMesh.renderOrder = 1;
+  shapeMesh.renderOrder = -1;
   
   // 计算父对象的包围盒
   parentObject.updateMatrixWorld(true);

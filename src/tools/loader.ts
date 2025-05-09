@@ -39,7 +39,7 @@ class Loader {
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
 
     this.textureLoader = new THREE.TextureLoader();
-    this.textureLoader.setPath(this._publicResourcePath);
+    // this.textureLoader.setPath(this._publicResourcePath);
 
     this.HDRtextureLoader = new RGBELoader();
     this.HDRtextureLoader.setPath(this._publicResourcePath);
