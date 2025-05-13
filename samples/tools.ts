@@ -152,6 +152,11 @@ export class GeoGround {
   };
 
   /**
+   * 配置参数
+   */
+  private config?: any;
+
+  /**
    * 构造函数
    * @param core 3D核心引擎实例
    */
@@ -185,16 +190,18 @@ export class GeoGround {
    */
   private setGlowEffect(shape: MeshObject3D, isRising: boolean): void {
     const material = shape.material as any;
+    const glowConfig = this.config?.light || {};
+    
     if (isRising) {
       material.uniforms.glowColor.value.set(0xffa500);
       material.uniforms.glowWidth.value = 0.9;
       material.uniforms.glowIntensity.value = 0.7;
-      material.uniforms.glowFalloff.value = 1.4;
+      material.uniforms.glowFalloff.value =  1.4;
     } else {
-      material.uniforms.glowColor.value.set(0x00aaff);
-      material.uniforms.glowWidth.value = 0.6;
-      material.uniforms.glowIntensity.value = 0.7;
-      material.uniforms.glowFalloff.value = 1.6;
+      material.uniforms.glowColor.value.set(glowConfig.glowColor || 0x00aaff);
+      material.uniforms.glowWidth.value = glowConfig.glowWidth || 0.6;
+      material.uniforms.glowIntensity.value = glowConfig.glowIntensity || 0.7;
+      material.uniforms.glowFalloff.value = glowConfig.glowFalloff || 1.6;
     }
   }
 
@@ -301,7 +308,9 @@ export class GeoGround {
     textWidget.pickedEnable = false;
     textWidget.init().then(widget => {
       // 文字位置设置在板块顶部上方
-      widget.position.set(point[0] + this.textHeight.radioScale * 1.5, point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale*1.5 );
+      //widget.position.set(point[0] + this.textHeight.radioScale * 1.5, point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale*1.5 );
+      widget.position.set(point[0], point[1], this.geoHeight.depth / 2 + this.textHeight.radioScale );
+
       province.add(widget);
       province.name = province.userData.properties.name;
       // 文字渲染队列拉满
@@ -388,7 +397,7 @@ export class GeoGround {
           depth: 1      // 省级深度最大
         };
         this.textHeight = {
-          radioScale: 1  // 省级文字最大
+          radioScale: 1.2  // 省级文字最大
         };
         this.pillarHeight = {
           scale: 7,
@@ -400,7 +409,7 @@ export class GeoGround {
           depth: 0.2    // 市级深度中等
         };
         this.textHeight = {
-          radioScale: 0.16  // 市级文字中等
+          radioScale: 0.2  // 市级文字中等
         };
         this.pillarHeight = {
           scale: 1.5,
@@ -469,16 +478,12 @@ export class GeoGround {
     });
 
     if (properties.centroid || properties.center) {
-      const point = properties.centroid || properties.center;
+      const point = properties.center;
       if (point) {
-        if (province.userData.properties.name === '宁德市') {
-          this.createLightPillar(point, province, 0xffa500, 0xffa500, this.pillarHeight.scale);
-        } else {
-          this.createLightPillar(point, province, 0x00aaff, 0x00ffff, this.pillarHeight.scale * 0.6);
-        }
+        // this.createLightPillar(point, province, 0x00aaff, 0x00ffff, this.pillarHeight.scale * 0.6);
         this.createTextLabel(point, province);
       }
-    }
+    } 
 
     return province;
   }
@@ -872,6 +877,7 @@ export class GeoGround {
     }
 
     try {
+      this.config = config;
       // 合并配置
       const mergedConfig = {
         ...GeoGround.getDefaultConfig(),

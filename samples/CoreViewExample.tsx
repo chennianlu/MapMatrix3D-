@@ -66,7 +66,7 @@ const CoreViewExample: React.FC = () => {
   };
 
   // 加载地图数据
-  const loadMap = async (jsonPath: string, isBack: boolean = false, config?: any) => {
+  const loadMap = async (jsonPath: string,  config?: any) => {
     if (!globalCore) return;
 
     setIsLoading(true);
@@ -88,7 +88,13 @@ const CoreViewExample: React.FC = () => {
       groundOpacity: config?.ground?.groundOpacity || 0.8,             // 设置地面透明度
       animation: true,               // 关闭动画
       markUrl: './assets/texture/光1.png',    // 设置标记贴图
-      groundUrl: './assets/texture/地板线01.png' // 设置地面贴图
+      groundUrl: './assets/texture/地板线01.png', // 设置地面贴图
+      glowEffect: {
+        glowColor: config?.light?.glowColor || '#00aaff',
+        glowWidth: config?.light?.glowWidth || 0.6,
+        glowIntensity: config?.light?.glowIntensity || 0.7,
+        glowFalloff: config?.light?.glowFalloff || 1.6
+      }
     });
     globalCore.scene.add(customGround);
     globalCore.sceneEffectTool.setBackground({
@@ -171,7 +177,7 @@ const CoreViewExample: React.FC = () => {
 
             if (mapConfig) {
               // 调用loadMap方法加载新地图
-              loadMap(mapConfig.url);
+              loadMap(mapConfig.url, lightConfig);
             } else {
               console.warn(`未找到 ${areaName} 的地图配置`);
             }
@@ -183,11 +189,11 @@ const CoreViewExample: React.FC = () => {
           mapHistory.pop();
           // 获取上一个地图
           const lastMap = mapHistory[mapHistory.length - 1];
-          loadMap(lastMap, true);
+          loadMap(lastMap, lightConfig);
         }
       });
 
-      loadMap("./data/map/china.json", false, darkConfig);
+      loadMap("./data/map/china.json", lightConfig);
 
       // 标记为已初始化
       globalInitialized = true;

@@ -13,12 +13,18 @@ export interface GroundParams extends BaseInitOptions {
   groundColor?: string;
   animation?: boolean;
   groundOpacity?: number;
+  glowEffect?: {
+    glowColor?: string;
+    glowWidth?: number;
+    glowIntensity?: number;
+    glowFalloff?: number;
+  };
 }
 
 export class EffectGround extends MeshObject3D {
   declare geometry: any;
-  radius: number;
-  hemisphere: boolean;
+  radius: number = 100;
+  hemisphere: boolean = false;
   constructor(options: GroundParams) {
     super();
     const {

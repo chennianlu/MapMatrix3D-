@@ -55,7 +55,7 @@ export const darkConfig = {
     "lineOpacity": 0.2,
     "glowColor": "#9ed8f5",
     "glowOpacity": 2,
-    "glowSpeed": 1,
+    "glowSpeed": 2.5,
     "speedFactor1": 1.8,
     "speedFactor2": 1,
     "speedFactor3": -1.2
@@ -108,7 +108,7 @@ export const lightConfig = {
     "lineOpacity": 0.2,
     "glowColor": "#9ed8f5",
     "glowOpacity": 2,
-    "glowSpeed": 1,
+    "glowSpeed": 2.5,
     "speedFactor1": 1.8,
     "speedFactor2": 1,
     "speedFactor3": -1.2
