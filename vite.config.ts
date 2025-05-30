@@ -1,34 +1,56 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import path from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-export default defineConfig({
-  plugins: [
-    react()
-  ],
-  root: resolve(__dirname),
-  resolve: {
-    alias: {
-      "@": resolve(__dirname, "samples"),
-      '@enerv-3d/core': resolve(__dirname, './src'),
-    },
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
-  },
-  server: {
-    port: 3000,
-  },
-  optimizeDeps: {
-    include: ['@enerv-3d/core'],
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd());
+  const { VITE_BASE_URL, VITE_API_URL, VITE_APP_TITLE } = env;
+  console.log(VITE_BASE_URL, VITE_API_URL, VITE_APP_TITLE);
+  return {
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src')
       },
     },
-  },
+    server: {
+      host: '0.0.0.0',
+      port: 3000,
+      strictPort: true,
+      cors: true,
+      proxy: {
+        '/admin-api': {
+          target: VITE_BASE_URL,
+          changeOrigin: true,
+        }
+      },
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost',
+        port: 3000,
+        clientPort: 3000
+      }
+    },
+    build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
+      sourcemap: true,
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'three-vendor': ['three']
+          }
+        }
+      }
+    },
+    define: {
+      'process.env': {
+        VITE_BASE_URL: JSON.stringify(VITE_BASE_URL),
+        VITE_API_URL: JSON.stringify(VITE_API_URL),
+        VITE_APP_TITLE: JSON.stringify(VITE_APP_TITLE)
+      }
+    }
+  };
 }); 

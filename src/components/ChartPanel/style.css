@@ -1,0 +1,29 @@
+.chart-panel {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 10px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.chart-panel:hover {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+}
+
+.chart-title {
+  color: #fff;
+  font-size: 16px;
+  margin-bottom: 16px;
+  padding-left: 10px;
+  border-left: 4px solid #4facfe;
+}
+
+.chart-content {
+  width: 100%;
+  height: calc(100% - 40px);
+  min-height: 200px;
+} 
