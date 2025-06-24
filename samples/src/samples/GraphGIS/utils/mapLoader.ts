@@ -79,7 +79,7 @@ export const loadMap = async (jsonPath: string, config?: any) => {
 
           // 设置控制器限制
           controls.maxDistance = cameraZ * 2;
-          controls.minDistance = cameraZ * 0.5;
+          controls.minDistance = cameraZ * 0.1;
         }
       }
     }

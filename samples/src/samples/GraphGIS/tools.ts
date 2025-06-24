@@ -505,8 +505,8 @@ export class GeoGround {
     if (properties.centroid || properties.center) {
       const point = properties.center;
       if (point) {
-        // this.createLightPillar(point, province, 0x00aaff, 0x00ffff, this.pillarHeight.scale * 0.6);
-        // this.createTextLabel(point, province);
+        this.createLightPillar(point, province, 0x00aaff, 0x00ffff, this.pillarHeight.scale * 0.6);
+        this.createTextLabel(point, province);
       }
     } 
 
@@ -818,9 +818,9 @@ export class GeoGround {
       scaleFactor: height,
       pillarColor,
       haloColor,
-      pointTextureUrl: './assets/texture/标注.png',
-      lightHaloTextureUrl: './assets/texture/标注光圈.png',
-      lightPillarUrl: './assets/texture/光柱.png'
+      pointTextureUrl: '/assets/texture/标注.png',
+      lightHaloTextureUrl: '/assets/texture/标注光圈.png',
+      lightPillarUrl: '/assets/texture/光柱.png'
     }).createLightPillar(
       point[0],
       point[1],
