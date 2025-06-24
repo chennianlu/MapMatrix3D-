@@ -1,10 +1,16 @@
-import React from 'react';
-import { useRoutes } from 'react-router-dom';
-import { routes } from './router';
 
-const App: React.FC = () => {
+import { useNavigate, useRoutes } from 'react-router-dom'
+
+
+function App() {
+
   const element = useRoutes(routes);
-  return element;
-};
 
-export default App; 
+  return (
+    <div id="app">
+     {element}
+    </div>
+  );
+}
+
+export default App;

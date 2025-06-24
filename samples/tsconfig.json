@@ -7,8 +7,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@enerv-3d/core": ["./src/index.ts"],
-      "@/*": ["./src/*"]
+      "@enerv-3d/core": ["../src/index.ts"],
+      "@/*": ["../src/*"]
     },
 
     /* Bundler mode */
